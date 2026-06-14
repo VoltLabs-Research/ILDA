@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ILDA"
+version = "2024.0"
+description = "Interfacial Line Defect Analysis"
+keywords = ["ovito", "python-modifier"]
+authors = [{name = "Nipal deka", email = "nipaliitg@gmail.com"}, {name = "Ryan Sills", email = "ryan.sills@rutgers.edu"}]
+maintainers = [{name = "Nipal deka", email = "nipaliitg@gmail.com"}, {name = "Ryan Sills", email = "ryan.sills@rutgers.edu"}]
+license = {text = "MIT License"}
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "ovito >= 3.11.2",
+    "numpy >= 1.20.0",  # Added for file reader
+]
+
+[project.urls]
+repository = "https://gitlab.com/mmod_public/ilda"
+
+[project.entry-points.'OVITO.Modifier']
+"Interfacial Line Defect Analysis (ILDA)" = "ILDA:ILDAModifier"
+
+[project.entry-points.'OVITO.FileReader']
+"ILDA CSV" = "ILDA:InterfaceDefectReader"
