@@ -1,17 +1,62 @@
 # Interfacial Line Defect Analysis (ILDA)
 
-> This is a C++23 port of the original ILDA algorithm.
-> The original is an OVITO Pro Python modifier (https://gitlab.com/mmod_public/ilda/-/blob/release/ILDA/utilities.py?ref_type=heads).
+Extracts interfacial dislocations and disconnections at a semi-coherent interface, inserting a line-segment representation annotated with Burgers vector and step height per segment (a DXA-style line-defect analysis).
 
-## Description
+## Install
 
-ILDA is designed to have similar functionality to the well-established dislocation extraction algorithm (DXA). Given an atomistic dataset containing a semi-coherent interface, ILDA will identify all interfacial dislocations and disconnections, and insert a line segment representation of the defects. Each line segment has a Burgers vector and step height associated with it. ILDA can be utilized in conjunction with DXA to provide a comprehensive analysis of line defects in an atomistic system.
+```bash
+vpm install @voltlabs/ilda
+```
 
-## Tutorial
-First time users may find [this tutorial](https://www.youtube.com/watch?v=O0tElGuW7pA) useful, which demonstrates how to use ILDA from start-to-finish. Note that this video describes how to run ILDA as a Python script.
+## CLI
 
-## Authors and acknowledgment
-ILDA was developed by Dr. Nipal Deka, Prof. Ryan Sills, and Dr. Inam Lalani of the Department of Materials Science and Engineering at Rutgers University, in collaboration with Dr. Alexander Stukowski of OVITO GmbH. Its development was supported by the U.S. Department of Energy, Office of Science, Basic Energy Sciences, under Award # DE-SC0022154 (N.D., R.B.S., and I.L.). The ILDA algorithm is documented in this [journal article](https://doi.org/10.1016/j.actamat.2023.119096).
+```bash
+ilda <input_dump> [output_base] [options]
+```
 
-## License
-ILDA is open-source software, see the LICENSE file for more details.
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `<input_dump>` | yes | — | Input LAMMPS dump. |
+| `[output_base]` | no | derived from input | Base path for output files. |
+| `--grain-atoms` | yes | — | Per-atom annotated parquet (grain id, structure type, orientation) from the upstream grain-segmentation step. |
+| `--grains` | yes | — | Per-grain table (structure type, orientation) from the upstream grain-segmentation step. |
+| `--atomA` | no | `0` | Atom A particle identifier. |
+| `--atomB` | no | `0` | Atom B particle identifier. |
+| `--aA` | no | `1.0` | Lattice constant a (Grain A). |
+| `--cA` | no | `0.0` | Lattice constant c (Grain A). |
+| `--aB` | no | `1.0` | Lattice constant a (Grain B). |
+| `--cB` | no | `0.0` | Lattice constant c (Grain B). |
+| `--typeA` | no | `-1` | Structure type A (`-1` = derive). |
+| `--typeB` | no | `-1` | Structure type B (`-1` = derive). |
+| `--Rsphere` | no | `10.0` | Probe sphere radius. |
+| `--htol` | no | `0.5` | Step height tolerance. |
+| `--btol` | no | `0.01` | Burgers length tolerance. |
+| `--angtol` | no | `5.0` | Burgers angular tolerance (deg). |
+| `--distF` | no | `10.0` | Interface skin distance. |
+| `--cis_tol` | no | `0.0` | Co-incidence site tolerance. |
+| `--rmsd` | no | `0.1` | PTM RMSD cutoff. |
+| `--estimateF` | no | `true` | Estimate the coherent reference frame. |
+| `--single_circuit` | no | `false` | Trace a single circuit. |
+| `--extract_lines` | no | `false` | Extract line segments. |
+| `--selection_only` | no | `false` | Use only selected particles. |
+| `--print_results` | no | `false` | Print a results summary. |
+| `--circuitAtom1` | no | `0` | Single-circuit atom 1. |
+| `--circuitAtom2` | no | `0` | Single-circuit atom 2. |
+| `--n` | no | `0,0,1` | Interface plane normal (x, y, z). |
+| `--xA` | no | `0,0,0` | Orientation x (Grain A); used when `--estimateF false`. |
+| `--yA` | no | `0,0,0` | Orientation y (Grain A); used when `--estimateF false`. |
+| `--xB` | no | `0,0,0` | Orientation x (Grain B); used when `--estimateF false`. |
+| `--yB` | no | `0,0,0` | Orientation y (Grain B); used when `--estimateF false`. |
+| `--EcohA` | no | — | Coherency strain (Grain A, 3x3 rows); used when `--estimateF false`. |
+| `--EcohB` | no | — | Coherency strain (Grain B, 3x3 rows); used when `--estimateF false`. |
+
+## Exports
+
+| Output file | Exposure | Exporter → artifact |
+|---|---|---|
+| `{output_base}_bonds.parquet` | Line Defects | BondExporter → glb |
+| `{output_base}_disconnection_summary.parquet` | Disconnection Modes | — (listing-only) |
+
+---
+
+Full input contract and examples: https://docs.voltcloud.dev/docs/plugins
