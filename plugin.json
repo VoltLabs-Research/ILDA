@@ -12,7 +12,7 @@
                         "icon": "HiCube",
                         "author": "/",
                         "license": "MIT",
-                        "version": "1.0.1",
+                        "version": "1.0.2",
                         "homepage": "https://github.com/voltlabs-research/ilda",
                         "description": ""
                     }
@@ -29,13 +29,19 @@
                                 "argument": "grain-atoms",
                                 "type": "string",
                                 "label": "Grain Atoms",
-                                "inferFromContext": true
+                                "inferFromContext": true,
+                                "plugins": [
+                                    "grain-segmentation"
+                                ]
                             },
                             {
                                 "argument": "grains",
                                 "type": "string",
                                 "label": "Grains",
-                                "inferFromContext": true
+                                "inferFromContext": true,
+                                "plugins": [
+                                    "grain-segmentation"
+                                ]
                             },
                             { "argument": "atomA", "type": "number", "label": "Atom A (Particle Identifier)", "default": 0, "min": 0, "step": 1 },
                             { "argument": "atomB", "type": "number", "label": "Atom B (Particle Identifier)", "default": 0, "min": 0, "step": 1 },
