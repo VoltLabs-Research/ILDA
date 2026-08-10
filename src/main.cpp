@@ -10,6 +10,7 @@
 #include <volt/ilda_json_exporter.h>
 #include <volt/ilda_types.h>
 #include <volt/analysis/ptm.h>
+#include <volt/plugin/option_binding.h>
 
 #include <oneapi/tbb/global_control.h>
 #include <tbb/info.h>
@@ -26,6 +27,7 @@
 
 using namespace Volt;
 using namespace Volt::CLI;
+using namespace Volt::Plugin;
 
 namespace {
 
@@ -408,7 +410,6 @@ int runCrfEstimateSelftest(const std::map<std::string, std::string>& opts) {
     return 0;
 }
 
-
 int runMeshSelftest(const std::map<std::string, std::string>& opts) {
     const std::string dump = getString(opts, "--selftest-mesh");
     const std::string oraclePath = getString(opts, "--oracle");
@@ -516,7 +517,6 @@ int runMeshSelftest(const std::map<std::string, std::string>& opts) {
     }
     return 0;
 }
-
 
 int runCircuitSelftest(const std::map<std::string, std::string>& opts) {
     const std::string dump = getString(opts, "--selftest-circuit");
@@ -665,7 +665,6 @@ int runCircuitSelftest(const std::map<std::string, std::string>& opts) {
     }
     return 0;
 }
-
 
 int runDefectsSelftest(const std::map<std::string, std::string>& opts) {
     const std::string dump = getString(opts, "--selftest-defects");
@@ -816,7 +815,6 @@ int runDefectsSelftest(const std::map<std::string, std::string>& opts) {
     return 0;
 }
 
-
 Vector3 parseVector3Option(const std::map<std::string, std::string>& opts,
                            const std::string& key, const Vector3& fallback) {
     const std::string raw = getString(opts, key, "");
@@ -875,42 +873,58 @@ Matrix3 parseMatrix3Option(const std::map<std::string, std::string>& opts,
     return fallback;
 }
 
-void showUsage(const std::string& name) {
-    printUsageHeader(name, "Volt - Interfacial Line Defect Analysis (ILDA)");
-    std::cerr
-        << "  --grain-atoms <path>      Path to upstream *_atoms.parquet (grain-segmentation).\n"
-        << "  --grains <path>           Path to upstream *_grains.parquet (grain-segmentation).\n"
-        << "  --atomA <id>              Particle Identifier of fiducial atom A.\n"
-        << "  --atomB <id>              Particle Identifier of fiducial atom B.\n"
-        << "  --circuitAtom1 <id>       Particle Identifier for single-circuit start atom.\n"
-        << "  --circuitAtom2 <id>       Particle Identifier for single-circuit end atom.\n"
-        << "  --aA/--cA/--aB/--cB <f>   Lattice constants (a/c axes) for grains A and B.\n"
-        << "  --typeA/--typeB <int>     Structure type override (-1 => derive). [default: -1]\n"
-        << "  --Rsphere <float>         Probe sphere radius. [default: 10]\n"
-        << "  --htol <float>            Step height tolerance. [default: 0.5]\n"
-        << "  --btol <float>            Burgers vector length tolerance. [default: 0.01]\n"
-        << "  --angtol <float>          Burgers vector angular tolerance (deg). [default: 5]\n"
-        << "  --distF <float>           Interface skin distance. [default: 10]\n"
-        << "  --cis_tol <float>         Co-incidence site tolerance. [default: 0]\n"
-        << "  --n '{\"x\":..}'            Interface plane normal vector (JSON).\n"
-        << "  --xA/--yA/--xB/--yB '{}'  Orientation vectors (JSON; used when estimateF=false).\n"
-        << "  --EcohA/--EcohB '[[..]]'  Coherency strain matrices (JSON; used when estimateF=false).\n"
-        << "  --estimateF [bool]        Estimate coherent reference frame. [default: true]\n"
-        << "  --single_circuit          Run a single Burgers circuit only.\n"
-        << "  --extract_lines           Run the full line-extraction pipeline.\n"
-        << "  --selection_only          Use only selected particles.\n"
-        << "  --print_results           Print a results summary.\n"
-        << "  --crystalStructure <t>    Reference crystal structure for PTM. [default: FCC]\n"
-        << "  --rmsd <float>            PTM RMSD cutoff. [default: 0.1]\n"
-        << "  --threads <int>           Max worker threads (TBB). [default: physical cores]\n";
-    printHelpOption();
+PluginDescriptor buildDescriptor() {
+    const IldaOptions defaults;
+    const auto number = [](double value) { return Detail::formatDefault(value); };
+
+    return {
+        "ilda",
+        "Interfacial Line Defect Analysis (ILDA)",
+        {
+            {"--grain-atoms", "path", "Per-atom table from grain-segmentation.", "", {}, ""},
+            {"--grains", "path", "Grains table from grain-segmentation.", "", {}, ""},
+            {"--atomA", "int", "Particle identifier of fiducial atom A.", std::to_string(defaults.atomA), {}, ""},
+            {"--atomB", "int", "Particle identifier of fiducial atom B.", std::to_string(defaults.atomB), {}, ""},
+            {"--circuitAtom1", "int", "Particle identifier for single-circuit start atom.", std::to_string(defaults.circuitAtom1), {}, ""},
+            {"--circuitAtom2", "int", "Particle identifier for single-circuit end atom.", std::to_string(defaults.circuitAtom2), {}, ""},
+            {"--aA", "float", "Lattice constant a for grain A.", number(defaults.aA), {}, ""},
+            {"--cA", "float", "Lattice constant c for grain A.", number(defaults.cA), {}, ""},
+            {"--aB", "float", "Lattice constant a for grain B.", number(defaults.aB), {}, ""},
+            {"--cB", "float", "Lattice constant c for grain B.", number(defaults.cB), {}, ""},
+            {"--typeA", "int", "Structure type override for grain A (-1 derives it).", std::to_string(defaults.typeA), {}, ""},
+            {"--typeB", "int", "Structure type override for grain B (-1 derives it).", std::to_string(defaults.typeB), {}, ""},
+            {"--Rsphere", "float", "Probe sphere radius.", number(defaults.Rsphere), {}, ""},
+            {"--htol", "float", "Step height tolerance.", number(defaults.htol), {}, ""},
+            {"--btol", "float", "Burgers vector length tolerance.", number(defaults.btol), {}, ""},
+            {"--angtol", "float", "Burgers vector angular tolerance (degrees).", number(defaults.angtol), {}, ""},
+            {"--distF", "float", "Interface skin distance.", number(defaults.distF), {}, ""},
+            {"--cis_tol", "float", "Co-incidence site tolerance.", number(defaults.cis_tol), {}, ""},
+            {"--n", "string", "Interface plane normal vector, as JSON {\"x\":..,\"y\":..,\"z\":..}.", "", {}, ""},
+            {"--xA", "string", "Grain A orientation vector x, as JSON (used when estimateF is false).", "", {}, ""},
+            {"--yA", "string", "Grain A orientation vector y, as JSON (used when estimateF is false).", "", {}, ""},
+            {"--xB", "string", "Grain B orientation vector x, as JSON (used when estimateF is false).", "", {}, ""},
+            {"--yB", "string", "Grain B orientation vector y, as JSON (used when estimateF is false).", "", {}, ""},
+            {"--EcohA", "string", "Grain A coherency strain matrix, as JSON (used when estimateF is false).", "", {}, ""},
+            {"--EcohB", "string", "Grain B coherency strain matrix, as JSON (used when estimateF is false).", "", {}, ""},
+            {"--estimateF", "bool", "Estimate the coherent reference frame.", defaults.estimateF ? "true" : "false", {}, ""},
+            {"--single_circuit", "bool", "Run a single Burgers circuit only.", defaults.single_circuit ? "true" : "false", {}, ""},
+            {"--extract_lines", "bool", "Run the full line-extraction pipeline.", defaults.extract_lines ? "true" : "false", {}, ""},
+            {"--selection_only", "bool", "Use only selected particles.", defaults.selection_only ? "true" : "false", {}, ""},
+            {"--print_results", "bool", "Print a results summary.", defaults.print_results ? "true" : "false", {}, ""},
+            {"--crystalStructure", "enum", "Reference crystal structure for PTM.", defaults.crystalStructure,
+             {"SC", "FCC", "HCP", "BCC", "CUBIC_DIAMOND", "HEX_DIAMOND"}, ""},
+            {"--rmsd", "float", "PTM RMSD cutoff.", number(defaults.rmsdCutoff), {}, ""},
+        }
+    };
 }
 
 }
 
 int main(int argc, char* argv[]) {
+    const PluginDescriptor descriptor = buildDescriptor();
+
     if(argc < 2) {
-        showUsage(argv[0]);
+        showPluginUsage(argv[0], descriptor);
         return 1;
     }
 
@@ -953,9 +967,8 @@ int main(int argc, char* argv[]) {
         return runDefectsSelftest(opts);
     }
 
-    if(hasOption(opts, "--help") || filename.empty()) {
-        showUsage(argv[0]);
-        return filename.empty() ? 1 : 0;
+    if(auto exitCode = handleIntrospection(argv[0], descriptor, opts, filename)) {
+        return *exitCode;
     }
 
     if(!hasOption(opts, "--threads")) {
