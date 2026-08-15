@@ -97,7 +97,6 @@ bool buildCisSurfaceMesh(
         return false;
     }
 
-    // PARITY: CIS filter goes into `selected` (only_selected=True), NOT determineCellRegion (returns 1 for every alpha-solid tet).
     DelaunayTessellation tessellation;
     const double ghostLayerSize = 2.5 * Rsphere;
     tessellation.generateTessellation(
@@ -109,7 +108,6 @@ bool buildCisSurfaceMesh(
         selected.data()
     );
 
-    // PARITY (alpha convention): alphaTest compares circumradius^2 < alpha, so alpha = Rsphere^2.
     const double alpha = Rsphere * Rsphere;
     ManifoldConstructionHelper<IldaMesh> helper{tessellation, outMesh, alpha, positions.get()};
 
@@ -119,7 +117,7 @@ bool buildCisSurfaceMesh(
         IldaMesh::Face* face,
         const std::array<int, 3>& vIdx,
         const std::array<DelaunayTessellation::VertexHandle, 3>& /*vH*/,
-        DelaunayTessellation::CellHandle /*cellHandle*/
+        DelaunayTessellation::CellHandle
     ) {
         IldaMesh::Edge* e = face->edges();
         for(int i = 0; i < 3; ++i) {
@@ -174,7 +172,6 @@ bool buildCisSurfaceMesh(
 
     int pruneCount = 0;
     while(true) {
-        // PARITY: numpy logical_and 3-arg quirk drops vertex2 — only vertex0 AND vertex1 gate selection.
         std::vector<std::size_t> selectedFaces;
         selectedFaces.reserve(faces.size());
         for(std::size_t fi = 0; fi < faces.size(); ++fi) {
@@ -183,7 +180,6 @@ bool buildCisSurfaceMesh(
             }
         }
 
-        // PARITY: scan ind=0,1,2, take the first hit (deterministic order matches Python).
         int ind = -1;
         std::size_t hitFace = 0;
         bool found = false;
@@ -207,7 +203,6 @@ bool buildCisSurfaceMesh(
             break;
         }
 
-        // PARITY (Python negative indexing): faces[j, ind-1] means ind=0 picks vertex2, ind=1 picks 0, ind=2 picks 1.
         const int rmVertex = faces[hitFace][static_cast<std::size_t>(ind)];
         const int pivotVertex = faces[hitFace][static_cast<std::size_t>((ind + 2) % 3)];
 

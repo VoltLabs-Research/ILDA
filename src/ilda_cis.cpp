@@ -13,7 +13,6 @@ namespace Volt {
 
 namespace {
 
-// PARITY: Volt {x,y,z,w} == ILDA (qx,qy,qz,qw) quaternion order
 Matrix3 quatToRotMat(const Quaternion& q) {
     const double qx = q.x();
     const double qy = q.y();
@@ -136,7 +135,7 @@ CisResult findCIS(
                     grainRs[grainInd] * (spatialIdeal[static_cast<std::size_t>(jj)] * grainScales[grainInd])
                 );
             }
-            break;  // PARITY: only the first atom of the grain
+            break;
         }
     }
 
@@ -169,7 +168,6 @@ CisResult findCIS(
             if(structureType[static_cast<std::size_t>(neigh.index)] != OTHER) {
                 continue;
             }
-            // PARITY: skip if already explored for this grain (test is >0, not >=0)
             if(result.cisNbrs[static_cast<std::size_t>(neigh.index)][static_cast<std::size_t>(grainInd)] > 0) {
                 continue;
             }
@@ -201,7 +199,6 @@ CisResult findCIS(
                             result.cisSpatialVecs[neigh2Index][static_cast<std::size_t>(grainInd)] =
                                 -neigh.delta - neigh2Delta;
 
-                            // PARITY: only the first eligible neigh3 (unconditional break)
                             NearestNeighborFinder::Query<32> nnq3(finder);
                             nnq3.findNeighbors(neigh2Index);
                             const auto& res3 = nnq3.results();
@@ -222,10 +219,10 @@ CisResult findCIS(
                                             -neigh.idealVector - idealVecs[grainInd][k] - idealVecs[grainInd][l];
                                         result.cisSpatialVecs[neigh3Index][static_cast<std::size_t>(grainInd)] =
                                             -neigh.delta - neigh2Delta - neigh3Delta;
-                                        break;  // PARITY: break the l loop
+                                        break;
                                     }
                                 }
-                                break;  // PARITY: break the neigh3 loop
+                                break;
                             }
                         }
                     }
@@ -234,7 +231,6 @@ CisResult findCIS(
         }
     }
 
-    // PARITY: CIS atom requires entries >=0 for BOTH grains
     for(std::size_t i = 0; i < n; ++i) {
         if(result.cisNbrs[i][0] >= 0 && result.cisNbrs[i][1] >= 0) {
             result.cis[i] = 1;

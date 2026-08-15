@@ -17,7 +17,7 @@ void findDefects(
     const CircuitContext& ctx,
     double btol,
     double htol,
-    double angtol,          // radians
+    double angtol,
     double bmagmax,
     std::vector<IldaSegment>& outSegments,
     std::vector<DisconnectionMode>& outModes,

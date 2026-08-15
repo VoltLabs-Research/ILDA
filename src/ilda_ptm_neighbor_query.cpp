@@ -80,7 +80,6 @@ void IldaPtmNeighborQuery::findNeighbors(std::size_t particleIndex, const Quater
         &templateIndex
     );
 
-    // PARITY: PTM C API quaternion order is {w,x,y,z}; Volt Quaternion is {x,y,z,w}.
     double q[4] = {
         state.orientation.w(),
         state.orientation.x(),
@@ -114,7 +113,6 @@ void IldaPtmNeighborQuery::findNeighbors(std::size_t particleIndex, const Quater
 
     _neighbors.reserve(static_cast<std::size_t>(numNbrs));
     for(int k = 0; k < numNbrs; ++k) {
-        // PARITY: correspondences/template are 1-based ([0]=central), so offset +1.
         const int nbrListPos = mapping[static_cast<std::size_t>(k + 1)] - 1;
         const int neighborAtomIndex = _ptm.cachedNeighborIndex(particleIndex, nbrListPos);
 

@@ -23,14 +23,14 @@ struct IldaOptions {
     double aB = 1.0;
     double cB = 0.0;
 
-    int typeA = -1;                  // -1 => derive from grains table
-    int typeB = -1;                  // -1 => derive from grains table
+    int typeA = -1;
+    int typeB = -1;
 
     double cis_tol = 0.0;
     double Rsphere = 10.0;
     double htol = 0.5;
     double btol = 0.01;
-    double angtol = 5.0;             // degrees (converted to radians at use)
+    double angtol = 5.0;
     double distF = 10.0;
 
     Vector3 n{0.0, 0.0, 0.0};

@@ -23,7 +23,6 @@ inline Matrix3 outer(const Vector3& u, const Vector3& w) {
     );
 }
 
-// PARITY: returns quaternion in Volt {x,y,z,w} == ILDA (qx,qy,qz,qw) order
 inline Quaternion rotMatToQuat(const Matrix3& R) {
     const double qw = std::sqrt(1.0 + R(0, 0) + R(1, 1) + R(2, 2)) / 2.0;
     const double qx = (R(2, 1) - R(1, 2)) / (4.0 * qw);
@@ -34,7 +33,6 @@ inline Quaternion rotMatToQuat(const Matrix3& R) {
 
 }
 
-// PARITY: rebuild V from stretches so trace(V)==sum(S) matches Python eigendecomp
 void polarDecomp(const Matrix3& F, Matrix3& V, Matrix3& R) {
     const AffineTransformation tm(
         F(0, 0), F(0, 1), F(0, 2),
@@ -72,7 +70,6 @@ Matrix3 totalDeformationGradPTM(
     for(int j = 0; j < query.count(); ++j) {
         const IldaPtmNeighborQuery::Neighbor neigh = query[j];
         const Vector3 idealA = neigh.idealVector * a;
-        // PARITY: neigh.delta is already PBC-wrapped; pbc_vec is a no-op, not re-applied
         W = W + outer(neigh.delta, idealA);
         V = V + outer(idealA, idealA);
     }
@@ -80,7 +77,6 @@ Matrix3 totalDeformationGradPTM(
     return W * V.inverse();
 }
 
-// PARITY: sums accumulated in ascending atom-index order (float-summation parity).
 void estimateF(
     const LammpsParser::Frame& frame,
     const CisResult& cis,
@@ -109,7 +105,6 @@ void estimateF(
         return;
     }
 
-    // PARITY: std::set keeps neighbors sorted ascending like np.unique
     std::set<std::size_t> neighborSet;
     for(std::size_t i = 0; i < n; ++i) {
         if(!cis.cis[i]) {
@@ -142,7 +137,6 @@ void estimateF(
             continue;
         }
 
-        // PARITY: redundant grain check kept (phase filter above already guarantees it)
         const StructureType atomType = static_cast<StructureType>(structureType[nbri]);
         if(grain[nbri] == gA.grainId) {
             const Matrix3 Fi = totalDeformationGradPTM(nbri, atomType, gA, query);

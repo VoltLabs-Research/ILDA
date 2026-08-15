@@ -54,7 +54,7 @@ std::pair<bool, double> parallelTest(const Vector3& v1, const Vector3& v2, doubl
     double ang = std::abs(vecAngle(v1, v2));
     double sign = 1.0;
     if(ang > PI / 2.0) {
-        sign = -1.0;  // PARITY: fold antiparallel onto parallel (sign flip)
+        sign = -1.0;
         ang = PI - ang;
     }
     return { ang < angtol, sign };
@@ -89,17 +89,17 @@ int findBin(double v, const std::vector<double>& edges) {
     for(int b = 0; b < L - 1; ++b) {
         if(v < edges[static_cast<std::size_t>(b + 1)]) return b;
     }
-    return L - 2;  // PARITY: last bin is closed [e[L-2], e[L-1]] (numpy.histogramdd)
+    return L - 2;
 }
 
 int argminAbsDiff(const std::vector<double>& mids, double val) {
     if(mids.empty()) return 0;
-    if(std::isnan(val)) return 0;  // PARITY: numpy.argmin returns 0 for all-NaN
+    if(std::isnan(val)) return 0;
     int best = 0;
     double bd = std::abs(mids[0] - val);
     for(std::size_t i = 1; i < mids.size(); ++i) {
         const double d = std::abs(mids[i] - val);
-        if(d < bd) {  // PARITY: strict < keeps ties at the first index
+        if(d < bd) {
             bd = d;
             best = static_cast<int>(i);
         }
@@ -279,7 +279,7 @@ void findDefects(
         for(IldaMesh::Edge* edge : faceEdges) {
             IldaMesh::Edge* opp = edge->oppositeEdge();
             if(opp && opp->bnorm > 0.0) {
-                edge->burgers = -opp->burgers;  // PARITY: opposite solved -> flip Burgers sign
+                edge->burgers = -opp->burgers;
                 edge->bnorm = opp->bnorm;
                 edge->stepIdealA = opp->stepIdealA;
                 edge->stepIdealB = opp->stepIdealB;
@@ -345,7 +345,6 @@ void findDefects(
         } while(e != f->edges());
     }
 
-    // PARITY: pad stop with +eps so the intended final edge lands just inside arange.
     const std::vector<double> bbins = arange(btol, bMax + btol + ILDA_EPS, btol);
     const std::vector<double> bbinmids = binMids(bbins);
     const std::vector<double> hbinsA = arange(0.0, hMaxA + htol + ILDA_EPS, htol);
@@ -425,7 +424,7 @@ void findDefects(
     }
     auto colorFor = [&](int bid) -> Vector3 {
         if(bid >= 0 && bid < Nb) return bcolors[static_cast<std::size_t>(bid)];
-        if(Nb > 0) return bcolors[static_cast<std::size_t>(Nb - 1)];  // PARITY: bcolors[-1]
+        if(Nb > 0) return bcolors[static_cast<std::size_t>(Nb - 1)];
         return Vector3(0.0, 0.0, 0.0);
     };
 
@@ -460,7 +459,7 @@ void findDefects(
         seg.stepIdealB = std::abs(hidealB);
         seg.plane = plane;
         seg.color = bcolor;
-        seg.bid = bid + 1;  // PARITY: 1-based ids
+        seg.bid = bid + 1;
         (void)bondId;
         outSegments.push_back(seg);
     };
@@ -511,7 +510,6 @@ void findDefects(
         const double bnorm2 = e2->bnorm;
         const double bnorm3 = e3->bnorm;
 
-        // PARITY: NaN ideal heights never satisfy `> htol` (matches numpy).
         const bool edge1test = (bnorm1 > btol) || (hidealA1 > htol);
         const bool edge2test = (bnorm2 > btol) || (hidealA2 > htol);
         const bool edge3test = (bnorm3 > btol) || (hidealA3 > htol);
@@ -577,7 +575,6 @@ void findDefects(
                            colorFor(bid3), bid3);
             }
 
-            // PARITY: stats ordered/signed to the first prototype per bid.
             const Vector3 bs[3] = { b1, b2, b3 };
             const int bids[3] = { bid1, bid2, bid3 };
             const double Ls[3] = { L1, L2, L3 };

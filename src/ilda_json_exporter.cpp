@@ -21,7 +21,7 @@ void IldaJsonExporter::writeBondsParquet(
         b.id = static_cast<std::int64_t>(i);
         b.atomA = s.atom1;
         b.atomB = s.atom2;
-        b.pbcShift = { {0, 0, 0} };  // PARITY: pos1/pos2 already carry the image shift
+        b.pbcShift = { {0, 0, 0} };
         b.posA = s.pos1;
         b.posB = s.pos2;
         b.distance = (s.pos2 - s.pos1).length();
@@ -59,7 +59,6 @@ void IldaJsonExporter::writeSummaryParquet(
     for(const DisconnectionMode& mode : modes) {
         for(std::size_t j = 0; j < mode.variants.size(); ++j) {
             const IldaVariant& v = mode.variants[j];
-            // PARITY: column order must mirror the Python listing.
             rows.push_back({
                 {"ID", mode.id},
                 {"Variant", static_cast<int>(j) + 1},

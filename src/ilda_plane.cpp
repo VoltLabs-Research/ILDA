@@ -14,7 +14,6 @@ std::pair<Vector3, double> findTerracePlane2(
 ) {
     Vector3 areaVec(0.0, 0.0, 0.0);
 
-    // Parity: start vertex only (Python `for i in range(1)`) — do not also walk end_vertex.
     for(IldaMesh::Edge* edge = startVertex->edges(); edge; edge = edge->nextVertexEdge()) {
         IldaMesh::Edge* edge2 = edge->nextFaceEdge();
         IldaMesh::Edge* edge3 = edge->prevFaceEdge();
@@ -45,7 +44,7 @@ std::pair<Vector3, double> findTerracePlane2(
     if(n.length() == 0.0) {
         const double nan = std::numeric_limits<double>::quiet_NaN();
         h = nan;
-        n = Vector3(nan, nan, nan);  // PARITY: zero area -> NaN normal + NaN height
+        n = Vector3(nan, nan, nan);
     } else {
         const Vector3 disp = cell.wrapVector(endVertex->pos() - startVertex->pos());
         h = std::abs(n.dot(disp));
