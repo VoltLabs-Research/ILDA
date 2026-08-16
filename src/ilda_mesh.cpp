@@ -12,8 +12,6 @@
 
 namespace Volt {
 
-namespace {
-
 void makeManifold(IldaMesh& mesh) {
     auto originalVertices = mesh.vertices();
 
@@ -60,8 +58,6 @@ void makeManifold(IldaMesh& mesh) {
             }
         }
     }
-}
-
 }
 
 bool buildCisSurfaceMesh(

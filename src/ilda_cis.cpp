@@ -11,8 +11,6 @@
 
 namespace Volt {
 
-namespace {
-
 Matrix3 quatToRotMat(const Quaternion& q) {
     const double qx = q.x();
     const double qy = q.y();
@@ -30,8 +28,6 @@ Matrix3 quatToRotMat(const Quaternion& q) {
     R(2, 1) = 2.0 * (qy * qz + qw * qx);
     R(2, 2) = 1.0 - 2.0 * (qx * qx + qy * qy);
     return R;
-}
-
 }
 
 CisResult findCIS(

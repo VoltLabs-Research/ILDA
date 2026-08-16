@@ -29,8 +29,6 @@ using namespace Volt;
 using namespace Volt::CLI;
 using namespace Volt::Plugin;
 
-namespace {
-
 using json = nlohmann::json;
 
 int runPtmSelftest(const std::map<std::string, std::string>& opts) {
@@ -916,8 +914,6 @@ PluginDescriptor buildDescriptor() {
             {"--rmsd", "float", "PTM RMSD cutoff.", number(defaults.rmsdCutoff), {}, ""},
         }
     };
-}
-
 }
 
 int main(int argc, char* argv[]) {

@@ -37,8 +37,6 @@ const Vector3 ILDA_COLORLIST[20] = {
     Vector3(0.6,    0.0,    0.0),
 };
 
-namespace {
-
 constexpr double ILDA_EPS = 1e-6;
 
 double vecAngle(const Vector3& v1, const Vector3& v2) {
@@ -174,8 +172,6 @@ std::pair<int, int> segmentAtom(Edge1Kind kind, IldaMesh::Edge* edge1,
         setMidedge(edge2, pcount);
     }
     return { atom1, atom2 };
-}
-
 }
 
 void findDefects(

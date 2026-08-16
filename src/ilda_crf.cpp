@@ -13,8 +13,6 @@
 
 namespace Volt {
 
-namespace {
-
 inline Matrix3 outer(const Vector3& u, const Vector3& w) {
     return Matrix3(
         u.x() * w.x(), u.x() * w.y(), u.x() * w.z(),
@@ -29,8 +27,6 @@ inline Quaternion rotMatToQuat(const Matrix3& R) {
     const double qy = (R(0, 2) - R(2, 0)) / (4.0 * qw);
     const double qz = (R(1, 0) - R(0, 1)) / (4.0 * qw);
     return Quaternion(qx, qy, qz, qw);
-}
-
 }
 
 void polarDecomp(const Matrix3& F, Matrix3& V, Matrix3& R) {

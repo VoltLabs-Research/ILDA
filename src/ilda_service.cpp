@@ -17,8 +17,6 @@
 
 namespace Volt {
 
-namespace {
-
 json readPayloadParquet(const std::string& path) {
     duckdb::DuckDB db(nullptr);
     duckdb::Connection con(db);
@@ -39,8 +37,6 @@ json readPayloadParquet(const std::string& path) {
     }
     const std::string payload = result->GetValue(0, 0).ToString();
     return json::parse(payload);
-}
-
 }
 
 ILDA::ILDA() = default;

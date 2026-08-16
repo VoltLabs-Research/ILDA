@@ -12,8 +12,6 @@
 
 namespace Volt {
 
-namespace {
-
 struct Neigh {
     double dist = 0.0;
     int index = -1;
@@ -48,8 +46,6 @@ struct PathResult {
     Vector3 spatialSum{0.0, 0.0, 0.0};
     Vector3 latticeSum{0.0, 0.0, 0.0};
 };
-
-}
 
 std::optional<std::pair<Matrix3, Quaternion>> getHcpFccTrans(
     const IldaPtmNeighborQuery::Neighbor& fccNeigh,
@@ -151,8 +147,6 @@ std::optional<std::pair<Matrix3, Quaternion>> getHcpFccTrans(
 
     return std::make_pair(Ft, hcpRefOrientation);
 }
-
-namespace {
 
 bool computeGrainProps(Frame& f, const CircuitContext& ctx) {
     f.grainId = ctx.grain[static_cast<std::size_t>(f.atomIndex)];
@@ -375,8 +369,6 @@ std::optional<PathResult> recursiveCircuitSearch(
         return success;
     }
     return std::nullopt;
-}
-
 }
 
 std::optional<CircuitResult> burgersCircuit(
