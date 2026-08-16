@@ -1,10 +1,12 @@
+import json
+import os
+
 from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps, cmake_layout
 
 
 class IldaConan(ConanFile):
     name = "ilda"
-    version = "1.0.4"
     package_type = "static-library"
     license = "MIT"
     settings = "os", "arch", "compiler", "build_type"
@@ -36,7 +38,13 @@ class IldaConan(ConanFile):
         "duckdb/*:with_sqlsmith": False,
         "duckdb/*:with_shell": False,
     }
+    exports = "vpm.json"
     exports_sources = "CMakeLists.txt", "include/*", "src/*", "scripts/*", "plugin.json", "README.md", ".gitignore"
+
+    def set_version(self):
+        manifest = os.path.join(self.recipe_folder, "vpm.json")
+        with open(manifest, encoding="utf-8") as stream:
+            self.version = json.load(stream)["version"]
 
     def layout(self):
         cmake_layout(self)
