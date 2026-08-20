@@ -5,6 +5,7 @@
 
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
+#include <tbb/enumerable_thread_specific.h>
 
 #include <array>
 #include <cmath>
@@ -28,10 +29,18 @@ void IldaPtmNeighborQuery::computeAtomStates() {
 
     std::vector<std::uint64_t> cached(n, 0ull);
 
+    tbb::enumerable_thread_specific<PTM::Kernel> kernels([this]{ return PTM::Kernel(_ptm); });
+
     tbb::parallel_for(tbb::blocked_range<std::size_t>(0, n), [&](const tbb::blocked_range<std::size_t>& range) {
-        PTM::Kernel kernel(_ptm);
+        PTM::Kernel& kernel = kernels.local();
         for(std::size_t i = range.begin(); i < range.end(); ++i) {
             kernel.cacheNeighbors(i, &cached[i]);
+        }
+    });
+
+    tbb::parallel_for(tbb::blocked_range<std::size_t>(0, n), [&](const tbb::blocked_range<std::size_t>& range) {
+        PTM::Kernel& kernel = kernels.local();
+        for(std::size_t i = range.begin(); i < range.end(); ++i) {
             const StructureType type = kernel.identifyStructure(i, cached);
             AtomState& state = _states[i];
             state.structureType = type;
