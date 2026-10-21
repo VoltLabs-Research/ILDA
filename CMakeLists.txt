@@ -121,19 +121,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 )
 
 if(EMSCRIPTEN)
-    set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".js")
-    target_compile_options(${PROJECT_NAME} PRIVATE -fexceptions)
-    target_link_options(${PROJECT_NAME} PRIVATE
-        "SHELL:-sALLOW_MEMORY_GROWTH=1"
-        "SHELL:-sMAXIMUM_MEMORY=4GB"
-        "SHELL:-sEXIT_RUNTIME=0"
-        "SHELL:-sMODULARIZE=0"
-        "SHELL:-sENVIRONMENT=web,node"
-        "SHELL:-sFORCE_FILESYSTEM=1"
-        "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-        "SHELL:-sEXPORTED_RUNTIME_METHODS=['callMain','FS']"
-    )
-    install(FILES "$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.wasm" DESTINATION bin OPTIONAL)
+    volt_wasm_program(${PROJECT_NAME})
 endif()
 
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)
