@@ -194,6 +194,10 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
     if(!resolveGrains(error)) {
         return AnalysisResult::failure(error.empty() ? "Failed to resolve grains" : error);
     }
+    if(!_options.single_circuit && !_options.extract_lines) {
+        spdlog::warn("Neither extract_lines nor single_circuit is enabled: only CIS atoms are detected, "
+                     "no line defects are written");
+    }
 
     if(!_options.estimateF) {
         const double coveraA = (_options.aA > 0.0) ? _options.cA / _options.aA : 0.0;
