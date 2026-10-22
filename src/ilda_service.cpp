@@ -185,8 +185,6 @@ bool ILDA::resolveGrains(std::string& error) {
 }
 
 json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) {
-    spdlog::info("ILDA: starting analysis");
-
     std::string error;
     if(!loadUpstream(frame, error)) {
         return AnalysisResult::failure(error.empty() ? "Failed to load upstream artifacts" : error);
@@ -308,7 +306,6 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
         }
     }
 
-    spdlog::info("ILDA: analysis completed");
     return result;
 }
 

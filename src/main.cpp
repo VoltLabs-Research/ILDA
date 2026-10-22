@@ -1,4 +1,5 @@
 #include <volt/cli/common.h>
+#include <volt/core/progress.h>
 #include <volt/ilda_service.h>
 #include <volt/ilda_options.h>
 #include <volt/ilda_ptm_neighbor_query.h>
@@ -1017,6 +1018,7 @@ int main(int argc, char* argv[]) {
         static_cast<std::size_t>(std::max(1, requestedThreads))
     );
     initLogging("ilda");
+    const Stopwatch runTimer;
     spdlog::info("Using {} threads (OneTBB)", requestedThreads);
 
     LammpsParser::Frame frame;
@@ -1082,7 +1084,7 @@ int main(int argc, char* argv[]) {
     analyzer.setOptions(options);
     json result = analyzer.run(frame, outputBase);
     if(result.value("is_failed", false)) {
-        spdlog::error("Analysis failed: {}", result.value("error", "Unknown error"));
+        spdlog::error("Analysis failed after {}: {}", runTimer.elapsed(), result.value("error", "Unknown error"));
         return 1;
     }
     {
@@ -1095,6 +1097,6 @@ int main(int argc, char* argv[]) {
             spdlog::warn("Could not write result document to {}", resultPath);
         }
     }
-    spdlog::info("Analysis completed successfully.");
+    spdlog::info("{} completed in {}.", descriptor.description, runTimer.elapsed());
     return 0;
 }
