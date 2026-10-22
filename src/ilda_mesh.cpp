@@ -1,6 +1,7 @@
 #include <volt/ilda_mesh.h>
 
 #include <volt/core/frame_adapter.h>
+#include <volt/core/progress.h>
 #include <volt/pipeline/delaunay_tessellation.h>
 #include <volt/helpers/manifold_construction_helper.h>
 
@@ -79,6 +80,10 @@ bool buildCisSurfaceMesh(
         return false;
     }
 
+    spdlog::info("Building CIS surface mesh from grain {} and CIS atoms (alpha-shape, Rsphere={})...",
+                 grainB, Rsphere);
+    const Stopwatch timer;
+
     std::vector<int> selected(n, 0);
     for(std::size_t i = 0; i < n; ++i) {
         const bool grainBmatch = (grain[i] == grainB) && (structureType[i] == g2s);
@@ -133,6 +138,8 @@ bool buildCisSurfaceMesh(
     }
 
     makeManifold(outMesh);
+    spdlog::info("  Surface constructed in {}: {} faces, {} vertices",
+                 timer.elapsed(), outMesh.faceCount(), outMesh.vertexCount());
 
     const std::size_t numVerts = outMesh.vertexCount();
     std::vector<Point3> vertexPos(numVerts);
@@ -166,6 +173,7 @@ bool buildCisSurfaceMesh(
         return vertexCis[static_cast<std::size_t>(meshVertexIndex)] ? 1 : 0;
     };
 
+    const Stopwatch pruneTimer;
     int pruneCount = 0;
     while(true) {
         std::vector<std::size_t> selectedFaces;
@@ -228,7 +236,7 @@ bool buildCisSurfaceMesh(
         }
     }
 
-    spdlog::info("Pruned {} non-CIS atoms from the surface mesh.", pruneCount);
+    spdlog::info("  Pruned {} non-CIS atoms from the surface mesh in {}", pruneCount, pruneTimer.elapsed());
 
     outMesh.clear();
     outMesh.reserveVertices(numVerts);
@@ -251,6 +259,7 @@ bool buildCisSurfaceMesh(
         spdlog::warn("Unable to connect opposite half edges of the pruned surface mesh.");
     }
 
+    spdlog::info("CIS surface mesh ready in {}: {} faces", timer.elapsed(), outMesh.faceCount());
     return true;
 }
 
