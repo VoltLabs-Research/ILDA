@@ -222,7 +222,6 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
     CisResult cis = findCIS(frame, _grain, _structureType, _gA, _gB, _selection, query, _options.cis_tol);
 
     const long cisCount = std::count(cis.cis.begin(), cis.cis.end(), static_cast<std::uint8_t>(1));
-    spdlog::info("Found {} CIS atoms", cisCount);
 
     json result = AnalysisResult::success();
     result["cis_count"] = static_cast<int>(cisCount);
