@@ -302,9 +302,6 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
                                               static_cast<int>(modes.size()),
                                               outputBase + "_disconnection_summary.parquet");
 
-            spdlog::info("ILDA: emitted {} line segments across {} disconnection modes "
-                         "(total line length {:.3f})",
-                         segments.size(), modes.size(), totalLength);
             result["num_segments"] = static_cast<int>(segments.size());
             result["num_modes"] = static_cast<int>(modes.size());
             result["total_line_length"] = totalLength;

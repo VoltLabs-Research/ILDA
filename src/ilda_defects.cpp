@@ -1,6 +1,7 @@
 #include <volt/ilda_defects.h>
 #include <volt/ilda_plane.h>
 #include <volt/ilda_circuit.h>
+#include <volt/core/progress.h>
 
 #include <algorithm>
 #include <array>
@@ -189,6 +190,10 @@ void findDefects(
     outModes.clear();
     outTotalLength = 0.0;
 
+    spdlog::info("Extracting line defects from {} mesh faces (btol={}, htol={}, angtol={:.3g} deg)...",
+                 mesh.faceCount(), btol, htol, angtol * 180.0 / PI);
+    const Stopwatch timer;
+
     const SimulationCell& cell = ctx.cell;
     const CisResult& cis = ctx.cis;
     const std::vector<std::uint8_t>& selection = ctx.selection;
@@ -214,6 +219,7 @@ void findDefects(
     std::vector<std::uint8_t> pbcFailVertices(vertexCount, 0);
     const auto& pbc = cell.pbcFlags();
     bool anyPbcFail = false;
+    std::size_t pbcFailFaces = 0;
     for(IldaMesh::Face* f : mesh.faces()) {
         IldaMesh::Edge* e1 = f->edges();
         if(!e1) continue;
@@ -229,6 +235,7 @@ void findDefects(
             Vector3(rv2.x() - rv1.x(), rv2.y() - rv1.y(), rv2.z() - rv1.z()),
             Vector3(rv0.x() - rv2.x(), rv0.y() - rv2.y(), rv0.z() - rv2.z())
         };
+        bool faceFails = false;
         for(int dim = 0; dim < 3; ++dim) {
             if(!pbc[static_cast<std::size_t>(dim)]) continue;
             int longCount = 0;
@@ -243,12 +250,14 @@ void findDefects(
                     }
                 }
                 anyPbcFail = true;
+                faceFails = true;
             }
         }
+        if(faceFails) ++pbcFailFaces;
     }
     if(anyPbcFail) {
-        spdlog::warn("Some mesh faces are too large to use periodic boundary "
-                     "conditions, these have been skipped by ILDA");
+        spdlog::warn("{} mesh faces are too large to use periodic boundary "
+                     "conditions, these have been skipped by ILDA", pbcFailFaces);
     }
 
     auto faceFail = [&](IldaMesh::Vertex* v) -> bool {
@@ -266,7 +275,13 @@ void findDefects(
     };
 
     bool printedMeshWarning = false;
+    ProgressReporter circuitProgress("  Tracing Burgers circuits", mesh.faceCount());
+    std::size_t facesVisited = 0;
+    std::size_t circuitsTraced = 0;
+    std::size_t circuitsAboveTol = 0;
+    std::size_t circuitsFailed = 0;
     for(IldaMesh::Face* f : mesh.faces()) {
+        circuitProgress.update(facesVisited++);
         IldaMesh::Edge* e1 = f->edges();
         if(!e1) continue;
         IldaMesh::Edge* e2 = e1->nextFaceEdge();
@@ -288,11 +303,15 @@ void findDefects(
                 if(!selOf(atom1) || !selOf(atom2)) continue;
                 if(cisOf(atom1) && cisOf(atom2)) {
                     std::optional<CircuitResult> out = burgersCircuit(atom1, atom2, ctx);
+                    ++circuitsTraced;
                     if(out) {
                         edge->burgers = out->latticeSum;
                         edge->stepIdealA = out->hA;
                         edge->stepIdealB = out->hB;
                         edge->bnorm = edge->burgers.length();
+                        if(edge->bnorm > btol) ++circuitsAboveTol;
+                    } else {
+                        ++circuitsFailed;
                     }
                 } else if(cisOf(atom1) != cisOf(atom2) && !printedMeshWarning) {
                     spdlog::warn("Mesh edge connects CIS atom to non-CIS atom, "
@@ -302,6 +321,8 @@ void findDefects(
             }
         }
     }
+    spdlog::info("  Traced {} Burgers circuits in {} ({} with |b| > btol, {} failed)",
+                 circuitsTraced, circuitProgress.elapsed(), circuitsAboveTol, circuitsFailed);
 
     for(IldaMesh::Face* f : mesh.faces()) {
         IldaMesh::Edge* e1 = f->edges();
@@ -687,8 +708,8 @@ void findDefects(
     }
     outTotalLength = Ltotal;
 
-    spdlog::info("Found {} unique disconnection modes (btol={}, htol={}); "
-                 "total line length = {:.3f}", Nb, btol, htol, Ltotal);
+    spdlog::info("Found {} unique disconnection modes and {} line segments in {} (total line length {:.3f})",
+                 Nb, outSegments.size(), timer.elapsed(), Ltotal);
 }
 
 }
