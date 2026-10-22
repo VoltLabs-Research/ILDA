@@ -6,6 +6,7 @@
 #include <volt/ilda_defects.h>
 #include <volt/ilda_ptm_neighbor_query.h>
 #include <volt/analysis/ptm.h>
+#include <volt/core/progress.h>
 
 #include <duckdb.hpp>
 
@@ -67,6 +68,9 @@ bool ILDA::loadUpstream(const LammpsParser::Frame& frame, std::string& error) {
         return false;
     }
 
+    spdlog::info("Loading grain-segmentation results...");
+    Stopwatch timer;
+
     json atomsDoc;
     try {
         atomsDoc = readPayloadParquet(_options.grainAtomsPath);
@@ -93,12 +97,14 @@ bool ILDA::loadUpstream(const LammpsParser::Frame& frame, std::string& error) {
         _structureType[idx] = a.value("structure_id", static_cast<int>(OTHER));
         ++aligned;
     }
-    spdlog::info("ILDA: aligned {}/{} atoms from {}", aligned, n, _options.grainAtomsPath);
+    spdlog::info("  Aligned {}/{} atoms to grain labels from {} in {}",
+                 aligned, n, _options.grainAtomsPath, timer.elapsed());
     if(aligned != n) {
-        spdlog::warn("ILDA: {} atoms in the frame were not present in the grain-atoms parquet",
-                     n - aligned);
+        spdlog::warn("{} atoms in the frame were not present in the grain-atoms parquet "
+                     "and stay unassigned (grain 0, OTHER)", n - aligned);
     }
 
+    timer.restart();
     json grainsDoc;
     try {
         grainsDoc = readPayloadParquet(_options.grainsPath);
@@ -124,7 +130,7 @@ bool ILDA::loadUpstream(const LammpsParser::Frame& frame, std::string& error) {
         }
         _grainTable[e.id] = e;
     }
-    spdlog::info("ILDA: loaded {} grains from {}", _grainTable.size(), _options.grainsPath);
+    spdlog::info("  Loaded {} grains from {} in {}", _grainTable.size(), _options.grainsPath, timer.elapsed());
 
     return true;
 }
@@ -172,7 +178,7 @@ bool ILDA::resolveGrains(std::string& error) {
     if(!resolveOne(_gA, g1Id, 0, _options.typeA, _options.aA, _options.cA)) return false;
     if(!resolveOne(_gB, g2Id, 1, _options.typeB, _options.aB, _options.cB)) return false;
 
-    spdlog::info("ILDA: grain A id={} type={} | grain B id={} type={}",
+    spdlog::info("Grain A: id={} type={} | grain B: id={} type={}",
                  _gA.grainId, structureTypeName(_gA.structureType),
                  _gB.grainId, structureTypeName(_gB.structureType));
     return true;
