@@ -33,6 +33,7 @@ using namespace Volt::Plugin;
 using json = nlohmann::json;
 
 int runPtmSelftest(const std::map<std::string, std::string>& opts) {
+    const Stopwatch timer;
     const std::string dump = getString(opts, "--selftest-ptm");
     const std::string oraclePath = getString(opts, "--oracle");
     const std::string outPath = getString(opts, "--out", "");
@@ -51,6 +52,7 @@ int runPtmSelftest(const std::map<std::string, std::string>& opts) {
     const auto qextArr = oracle.at("qext_xyzw");
     const Quaternion qext(qextArr[0].get<double>(), qextArr[1].get<double>(),
                           qextArr[2].get<double>(), qextArr[3].get<double>());
+    std::cerr << "PTM self-test: rmsd=" << rmsd << "\n";
 
     LammpsParser::Frame frame;
     if(!parseFrame(dump, frame)) return 1;
@@ -111,6 +113,7 @@ int runPtmSelftest(const std::map<std::string, std::string>& opts) {
         os << out.dump(2) << "\n";
         std::cerr << "Wrote " << outPath << " (" << atoms.size() << " atoms)\n";
     }
+    std::cerr << "PTM self-test completed in " << timer.elapsed() << "\n";
     return 0;
 }
 
@@ -129,6 +132,7 @@ StructureType ovitoTypeToVolt(int t) {
 }
 
 int runCisSelftest(const std::map<std::string, std::string>& opts) {
+    const Stopwatch timer;
     const std::string dump = getString(opts, "--selftest-cis");
     const std::string oraclePath = getString(opts, "--oracle");
     const std::string outPath = getString(opts, "--out", "");
@@ -147,6 +151,7 @@ int runCisSelftest(const std::map<std::string, std::string>& opts) {
     const double cisTol = oracle.value("cis_tol", 0.0);
     const double aA = oracle.value("aA", 1.0);
     const double aB = oracle.value("aB", 1.0);
+    std::cerr << "CIS self-test: rmsd=" << rmsd << ", cis_tol=" << cisTol << ", aA=" << aA << ", aB=" << aB << "\n";
 
     LammpsParser::Frame frame;
     if(!parseFrame(dump, frame)) return 1;
@@ -239,6 +244,7 @@ int runCisSelftest(const std::map<std::string, std::string>& opts) {
         os << out.dump(2) << "\n";
         std::cerr << "Wrote " << outPath << " (sum_cis=" << cisCount << ")\n";
     }
+    std::cerr << "CIS self-test completed in " << timer.elapsed() << "\n";
     return 0;
 }
 
@@ -260,6 +266,7 @@ json matrix3ToJsonRowMajor(const Matrix3& m) {
 }
 
 int runCrfComputeSelftest(const std::map<std::string, std::string>& opts) {
+    const Stopwatch timer;
     const std::string oraclePath = getString(opts, "--oracle");
     const std::string outPath = getString(opts, "--out", "");
     if(oraclePath.empty()) {
@@ -285,6 +292,7 @@ int runCrfComputeSelftest(const std::map<std::string, std::string>& opts) {
     const Matrix3 EcohB = jsonToMatrix3RowMajor(oracle.at("EcohB"));
     const double coveraA = oracle.value("coveraA", 0.0);
     const double coveraB = oracle.value("coveraB", 0.0);
+    std::cerr << "CRF compute self-test: coveraA=" << coveraA << ", coveraB=" << coveraB << "\n";
 
     GrainRef gA, gB;
     gA.grainId = 1;
@@ -305,10 +313,12 @@ int runCrfComputeSelftest(const std::map<std::string, std::string>& opts) {
         os << out.dump(2) << "\n";
         std::cerr << "Wrote " << outPath << " (crf-compute)\n";
     }
+    std::cerr << "CRF compute self-test completed in " << timer.elapsed() << "\n";
     return 0;
 }
 
 int runCrfEstimateSelftest(const std::map<std::string, std::string>& opts) {
+    const Stopwatch timer;
     const std::string dump = getString(opts, "--selftest-crf-estimate");
     const std::string oraclePath = getString(opts, "--oracle");
     const std::string outPath = getString(opts, "--out", "");
@@ -327,6 +337,8 @@ int runCrfEstimateSelftest(const std::map<std::string, std::string>& opts) {
     const double aA = oracle.value("aA", 1.0);
     const double aB = oracle.value("aB", 1.0);
     const double distF = oracle.value("distF", 10.0);
+    std::cerr << "CRF estimate self-test: rmsd=" << rmsd << ", cis_tol=" << cisTol << ", aA=" << aA
+              << ", aB=" << aB << ", distF=" << distF << "\n";
 
     LammpsParser::Frame frame;
     if(!parseFrame(dump, frame)) return 1;
@@ -406,10 +418,12 @@ int runCrfEstimateSelftest(const std::map<std::string, std::string>& opts) {
         os << out.dump(2) << "\n";
         std::cerr << "Wrote " << outPath << " (crf-estimate)\n";
     }
+    std::cerr << "CRF estimate self-test completed in " << timer.elapsed() << "\n";
     return 0;
 }
 
 int runMeshSelftest(const std::map<std::string, std::string>& opts) {
+    const Stopwatch timer;
     const std::string dump = getString(opts, "--selftest-mesh");
     const std::string oraclePath = getString(opts, "--oracle");
     const std::string outPath = getString(opts, "--out", "");
@@ -427,6 +441,8 @@ int runMeshSelftest(const std::map<std::string, std::string>& opts) {
     const double Rsphere = oracle.value("Rsphere", 15.0);
     const int grainB = oracle.at("grain_b").get<int>();
     const int g2sVolt = static_cast<int>(ovitoTypeToVolt(oracle.at("g2_s").get<int>()));
+    std::cerr << "Mesh self-test: Rsphere=" << Rsphere << ", grain B=" << grainB
+              << " (" << structureTypeName(g2sVolt) << ")\n";
 
     LammpsParser::Frame frame;
     if(!parseFrame(dump, frame)) return 1;
@@ -514,10 +530,12 @@ int runMeshSelftest(const std::map<std::string, std::string>& opts) {
         std::cerr << "Wrote " << outPath << " (final_faces=" << faceCount
                   << " used_cis=" << usedCis << " used_noncis=" << usedNonCis << ")\n";
     }
+    std::cerr << "Mesh self-test completed in " << timer.elapsed() << "\n";
     return 0;
 }
 
 int runCircuitSelftest(const std::map<std::string, std::string>& opts) {
+    const Stopwatch timer;
     const std::string dump = getString(opts, "--selftest-circuit");
     const std::string oraclePath = getString(opts, "--oracle");
     const std::string outPath = getString(opts, "--out", "");
@@ -535,6 +553,7 @@ int runCircuitSelftest(const std::map<std::string, std::string>& opts) {
     const double cisTol = oracle.value("cis_tol", 0.0);
     const double aA = oracle.value("aA", 1.0);
     const double aB = oracle.value("aB", 1.0);
+    std::cerr << "Circuit self-test: rmsd=" << rmsd << ", cis_tol=" << cisTol << ", aA=" << aA << ", aB=" << aB << "\n";
 
     LammpsParser::Frame frame;
     if(!parseFrame(dump, frame)) return 1;
@@ -662,10 +681,12 @@ int runCircuitSelftest(const std::map<std::string, std::string>& opts) {
         std::cerr << "Wrote " << outPath << " (circuit; sum_cis=" << sumCis
                   << ", " << circuitsOut.size() << " circuits)\n";
     }
+    std::cerr << "Circuit self-test completed in " << timer.elapsed() << "\n";
     return 0;
 }
 
 int runDefectsSelftest(const std::map<std::string, std::string>& opts) {
+    const Stopwatch timer;
     const std::string dump = getString(opts, "--selftest-defects");
     const std::string oraclePath = getString(opts, "--oracle");
     const std::string outPath = getString(opts, "--out", "");
@@ -687,6 +708,8 @@ int runDefectsSelftest(const std::map<std::string, std::string>& opts) {
     const double htol = oracle.value("htol", 0.5);
     const double angtolDeg = oracle.value("angtol", 5.0);
     const double Rsphere = oracle.value("Rsphere", 10.0);
+    std::cerr << "Defects self-test: rmsd=" << rmsd << ", cis_tol=" << cisTol << ", aA=" << aA << ", aB=" << aB
+              << ", btol=" << btol << ", htol=" << htol << ", angtol=" << angtolDeg << ", Rsphere=" << Rsphere << "\n";
 
     LammpsParser::Frame frame;
     if(!parseFrame(dump, frame)) return 1;
@@ -811,6 +834,7 @@ int runDefectsSelftest(const std::map<std::string, std::string>& opts) {
         std::cerr << "Wrote " << outPath << " (segments=" << segments.size()
                   << " modes=" << modes.size() << " L=" << totalLength << ")\n";
     }
+    std::cerr << "Defects self-test completed in " << timer.elapsed() << "\n";
     return 0;
 }
 
