@@ -1,4 +1,5 @@
 #include <volt/ilda_ptm_neighbor_query.h>
+#include <volt/core/progress.h>
 
 #include <ptm_constants.h>
 #include <ptm_functions.h>
@@ -9,7 +10,9 @@
 
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <string>
 #include <spdlog/spdlog.h>
 
 namespace Volt {
@@ -27,21 +30,31 @@ void IldaPtmNeighborQuery::computeAtomStates() {
         return;
     }
 
+    const Stopwatch timer;
     std::vector<std::uint64_t> cached(n, 0ull);
 
     tbb::enumerable_thread_specific<PTM::Kernel> kernels([this]{ return PTM::Kernel(_ptm); });
 
+    ProgressReporter orderProgress("  Ordering PTM neighbors", n);
     tbb::parallel_for(tbb::blocked_range<std::size_t>(0, n), [&](const tbb::blocked_range<std::size_t>& range) {
         PTM::Kernel& kernel = kernels.local();
         for(std::size_t i = range.begin(); i < range.end(); ++i) {
             kernel.cacheNeighbors(i, &cached[i]);
         }
+        orderProgress.advance(range.size());
     });
 
+    using TypeCounts = std::array<std::size_t, NUM_STRUCTURE_TYPES>;
+    tbb::enumerable_thread_specific<TypeCounts> typeCounts([]{ return TypeCounts{}; });
+    ProgressReporter matchProgress("  Matching PTM templates", n);
     tbb::parallel_for(tbb::blocked_range<std::size_t>(0, n), [&](const tbb::blocked_range<std::size_t>& range) {
         PTM::Kernel& kernel = kernels.local();
+        TypeCounts& counts = typeCounts.local();
         for(std::size_t i = range.begin(); i < range.end(); ++i) {
             const StructureType type = kernel.identifyStructure(i, cached);
+            if(static_cast<std::size_t>(type) < counts.size()) {
+                ++counts[static_cast<std::size_t>(type)];
+            }
             AtomState& state = _states[i];
             state.structureType = type;
             if(type == OTHER) {
@@ -52,7 +65,29 @@ void IldaPtmNeighborQuery::computeAtomStates() {
             state.interatomicDistance = kernel.interatomicDistance();
             state.valid = 1;
         }
+        matchProgress.advance(range.size());
     });
+
+    TypeCounts totals{};
+    for(const TypeCounts& counts : typeCounts) {
+        for(std::size_t t = 0; t < totals.size(); ++t) {
+            totals[t] += counts[t];
+        }
+    }
+    std::string summary;
+    auto appendCount = [&](const char* name, std::size_t count) {
+        char text[64];
+        std::snprintf(text, sizeof(text), "%s%s %zu (%.1f%%)", summary.empty() ? "" : ", ",
+                      name, count, percentOf(count, n));
+        summary += text;
+    };
+    for(std::size_t t = 1; t < totals.size(); ++t) {
+        if(totals[t] > 0) {
+            appendCount(structureTypeName(static_cast<int>(t)), totals[t]);
+        }
+    }
+    appendCount("Other", totals[OTHER]);
+    spdlog::info("  Matched PTM templates in {}: {}", timer.elapsed(), summary);
 }
 
 void IldaPtmNeighborQuery::findNeighbors(std::size_t particleIndex, const Quaternion* qref) {

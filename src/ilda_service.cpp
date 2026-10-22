@@ -206,6 +206,9 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
                  _options.EcohA, _options.EcohB, coveraA, coveraB, _gA, _gB);
     }
 
+    spdlog::info("Running polyhedral template matching on {} atoms (RMSD cutoff {})...",
+                 frame.positions.size(), _options.rmsdCutoff);
+    const Stopwatch ptmTimer;
     PTM ptm;
     ptm.setRmsdCutoff(_options.rmsdCutoff);
     ptm.setCalculateDefGradient(false);
@@ -214,6 +217,7 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
     }
     IldaPtmNeighborQuery query(ptm);
     query.computeAtomStates();
+    spdlog::info("Polyhedral template matching done in {}", ptmTimer.elapsed());
 
     CisResult cis = findCIS(frame, _grain, _structureType, _gA, _gB, _selection, query, _options.cis_tol);
 
