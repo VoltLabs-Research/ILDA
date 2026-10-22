@@ -45,7 +45,7 @@ void IldaJsonExporter::writeBondsParquet(
         }
     );
 
-    spdlog::info("Wrote {} ILDA line segments -> {}", bonds.size(), filePath);
+    spdlog::info("Wrote ILDA line segments -> {}", filePath);
 }
 
 void IldaJsonExporter::writeSummaryParquet(
