@@ -1066,6 +1066,17 @@ int main(int argc, char* argv[]) {
     options.crystalStructure = getString(opts, "--crystalStructure", options.crystalStructure);
     options.rmsdCutoff = getDouble(opts, "--rmsd", options.rmsdCutoff);
 
+    // Resolved values rather than the raw flags: a negative number such as "--typeA -1" reaches
+    // parseArgs as "true", and getInt then falls back to the default.
+    spdlog::info("Parameters: atomA={}, atomB={}, aA={}, cA={}, aB={}, cB={}, typeA={}, typeB={}, rmsd={}, "
+                 "cis_tol={}, estimateF={}, distF={}, extract_lines={}, Rsphere={}, btol={}, htol={}, "
+                 "angtol={}, n=({}, {}, {}), single_circuit={}, circuitAtom1={}, circuitAtom2={}",
+                 options.atomA, options.atomB, options.aA, options.cA, options.aB, options.cB,
+                 options.typeA, options.typeB, options.rmsdCutoff, options.cis_tol, options.estimateF,
+                 options.distF, options.extract_lines, options.Rsphere, options.btol, options.htol,
+                 options.angtol, options.n.x(), options.n.y(), options.n.z(), options.single_circuit,
+                 options.circuitAtom1, options.circuitAtom2);
+
     spdlog::info("Starting ILDA analysis...");
     ILDAService analyzer;
     analyzer.setOptions(options);
