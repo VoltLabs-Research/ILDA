@@ -1,10 +1,12 @@
 #include <volt/ilda_crf.h>
 
 #include <volt/core/frame_adapter.h>
+#include <volt/core/progress.h>
 #include <volt/analysis/cutoff_neighbor_finder.h>
 #include <volt/math/affine_decomposition.h>
 #include <volt/math/affine_transformation.h>
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <vector>
@@ -85,6 +87,11 @@ void estimateF(
     GrainRef& gB
 ) {
     const std::size_t n = static_cast<std::size_t>(frame.natoms);
+    const std::size_t cisAtoms = static_cast<std::size_t>(
+        std::count(cis.cis.begin(), cis.cis.end(), static_cast<std::uint8_t>(1)));
+    spdlog::info("Estimating coherent reference frame from atoms within distF={} of {} CIS atoms...",
+                 distF, cisAtoms);
+    const Stopwatch timer;
 
     auto positions = FrameAdapter::createPositionPropertyShared(frame);
     if(!positions) {
@@ -102,22 +109,30 @@ void estimateF(
     }
 
     std::set<std::size_t> neighborSet;
-    for(std::size_t i = 0; i < n; ++i) {
-        if(!cis.cis[i]) {
-            continue;
-        }
-        for(CutoffNeighborFinder::Query q(finder, i); !q.atEnd(); q.next()) {
-            neighborSet.insert(q.current());
+    {
+        ProgressReporter gatherProgress("  Collecting atoms near CIS sites", cisAtoms);
+        std::size_t visitedCis = 0;
+        for(std::size_t i = 0; i < n; ++i) {
+            if(!cis.cis[i]) {
+                continue;
+            }
+            for(CutoffNeighborFinder::Query q(finder, i); !q.atEnd(); q.next()) {
+                neighborSet.insert(q.current());
+            }
+            gatherProgress.update(++visitedCis);
         }
     }
+    spdlog::info("  Collected {} atoms within distF of the interface in {}", neighborSet.size(), timer.elapsed());
 
     Matrix3 FsumA{Matrix3::Zero()};
     Matrix3 FsumB{Matrix3::Zero()};
     long NA = 0;
     long NB = 0;
 
-    spdlog::info("Estimating FA and FB...");
+    ProgressReporter fitProgress("  Fitting deformation gradients", neighborSet.size());
+    std::size_t fitted = 0;
     for(const std::size_t nbri : neighborSet) {
+        fitProgress.update(fitted++);
         if(nbri >= n) {
             continue;
         }
@@ -158,14 +173,14 @@ void estimateF(
         gB.F = Matrix3::Identity();
     }
 
-    spdlog::info("Used {} and {} atoms to estimate FA and FB, respectively.", NA, NB);
+    spdlog::info("  Used {} and {} atoms to estimate FA and FB, respectively.", NA, NB);
 
     Matrix3 VA, RA, VB, RB;
     polarDecomp(gA.F, VA, RA);
     polarDecomp(gB.F, VB, RB);
-    spdlog::info("Estimated coherent reference frame (with polar decomposition)");
-    spdlog::info("FA trace(VA)={:.6f}", VA(0, 0) + VA(1, 1) + VA(2, 2));
-    spdlog::info("FB trace(VB)={:.6f}", VB(0, 0) + VB(1, 1) + VB(2, 2));
+    spdlog::info("Estimated coherent reference frame (with polar decomposition) in {}: "
+                 "trace(VA)={:.6f}, trace(VB)={:.6f}",
+                 timer.elapsed(), VA(0, 0) + VA(1, 1) + VA(2, 2), VB(0, 0) + VB(1, 1) + VB(2, 2));
 }
 
 void computeF(
