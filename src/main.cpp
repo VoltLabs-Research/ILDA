@@ -1111,7 +1111,13 @@ int main(int argc, char* argv[]) {
     spdlog::info("Starting ILDA analysis...");
     ILDAService analyzer;
     analyzer.setOptions(options);
-    json result = analyzer.run(frame, outputBase);
+    // The analysis throws on bad input; report it as the failure it is instead of aborting.
+    json result;
+    try {
+        result = analyzer.run(frame, outputBase);
+    } catch (const std::exception& error) {
+        result = json{{"is_failed", true}, {"error", error.what()}};
+    }
     if(result.value("is_failed", false)) {
         spdlog::error("Analysis failed after {}: {}", runTimer.elapsed(), result.value("error", "Unknown error"));
         return 1;
