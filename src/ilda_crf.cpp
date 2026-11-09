@@ -100,6 +100,8 @@ void estimateF(
         gB.F = Matrix3::Identity();
         return;
     }
+    // Binning the atoms, collecting those near CIS sites, then fitting their deformation gradients.
+    ProgressSteps steps({1.0, 1.0, 2.0});
     CutoffNeighborFinder finder;
     if(!finder.prepare(distF, positions.get(), frame.simulationCell)) {
         spdlog::error("estimateF: CutoffNeighborFinder::prepare failed");
@@ -107,6 +109,7 @@ void estimateF(
         gB.F = Matrix3::Identity();
         return;
     }
+    steps.next();
 
     std::set<std::size_t> neighborSet;
     {
@@ -123,6 +126,7 @@ void estimateF(
         }
     }
     spdlog::info("  Collected {} atoms within distF of the interface in {}", neighborSet.size(), timer.elapsed());
+    steps.next();
 
     Matrix3 FsumA{Matrix3::Zero()};
     Matrix3 FsumB{Matrix3::Zero()};

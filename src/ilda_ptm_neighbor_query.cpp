@@ -35,6 +35,8 @@ void IldaPtmNeighborQuery::computeAtomStates() {
 
     tbb::enumerable_thread_specific<PTM::Kernel> kernels([this]{ return PTM::Kernel(_ptm); });
 
+    // Ordering the neighbors, then matching the templates, the second about twice as long.
+    ProgressSteps steps({1.0, 2.0});
     ProgressReporter orderProgress("  Ordering PTM neighbors", n);
     tbb::parallel_for(tbb::blocked_range<std::size_t>(0, n), [&](const tbb::blocked_range<std::size_t>& range) {
         PTM::Kernel& kernel = kernels.local();
@@ -43,6 +45,7 @@ void IldaPtmNeighborQuery::computeAtomStates() {
         }
         orderProgress.advance(range.size());
     });
+    steps.next();
 
     using TypeCounts = std::array<std::size_t, NUM_STRUCTURE_TYPES>;
     tbb::enumerable_thread_specific<TypeCounts> typeCounts([]{ return TypeCounts{}; });
