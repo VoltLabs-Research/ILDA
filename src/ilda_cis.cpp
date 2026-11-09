@@ -65,11 +65,14 @@ CisResult findCIS(
         spdlog::error("findCIS: failed to create position property");
         return result;
     }
+    // Indexing the atoms, scanning grain atoms for interface candidates, then matching the sites.
+    ProgressSteps steps({1.0, 3.0, 1.0});
     NearestNeighborFinder finder(26);
     if(!finder.prepare(positions.get(), frame.simulationCell)) {
         spdlog::error("findCIS: NearestNeighborFinder::prepare failed");
         return result;
     }
+    steps.next();
 
     std::size_t grainAAtoms = 0;
     std::size_t grainBAtoms = 0;
@@ -111,6 +114,7 @@ CisResult findCIS(
         spdlog::info("  Found {} interface candidates among {} grain A and {} grain B atoms in {}",
                      g1g2candidates.size(), grainAAtoms, grainBAtoms, scanProgress.elapsed());
     }
+    steps.next();
 
     std::array<std::vector<Vector3>, 2> idealVecs;
     std::array<std::vector<Vector3>, 2> rotIdealVecs;

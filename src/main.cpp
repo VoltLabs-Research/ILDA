@@ -1045,11 +1045,16 @@ int main(int argc, char* argv[]) {
     const Stopwatch runTimer;
     spdlog::info("Using {} threads (OneTBB)", requestedThreads);
 
+    // Reading the input, then the analysis, the steps pluginMain takes for every other plugin.
+    JobProgress& progress = JobProgress::instance();
+    progress.beginInput();
+
     LammpsParser::Frame frame;
     if(!parseFrame(filename, frame)) return 1;
 
     outputBase = deriveOutputBase(filename, outputBase);
     spdlog::info("Output base: {}", outputBase);
+    progress.beginAnalysis(descriptor.description);
 
     IldaOptions options;
     options.grainAtomsPath = getString(opts, "--grain-atoms");
@@ -1122,5 +1127,6 @@ int main(int argc, char* argv[]) {
         }
     }
     spdlog::info("{} completed in {}.", descriptor.description, runTimer.elapsed());
+    progress.finish();
     return 0;
 }

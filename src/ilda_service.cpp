@@ -185,6 +185,19 @@ bool ILDA::resolveGrains(std::string& error) {
 }
 
 json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) {
+    const bool tracesCircuits = _options.single_circuit || _options.extract_lines;
+    // Loading the grain segmentation, PTM neighbors, PTM structures, CIS search, the reference
+    // frame estimate, the single circuit, the CIS surface mesh, line defects and outputs; the
+    // parts this run's options skip weigh nothing. No timed runs to go by: estimates.
+    ProgressSteps steps({
+        1.5, 1.0, 4.0, 3.0,
+        tracesCircuits && _options.estimateF ? 1.0 : 0.0,
+        _options.single_circuit ? 0.1 : 0.0,
+        _options.extract_lines ? 3.0 : 0.0,
+        _options.extract_lines ? 2.0 : 0.0,
+        _options.extract_lines ? 0.2 : 0.0
+    });
+    JobProgress::instance().setText("Loading the grain segmentation");
     std::string error;
     if(!loadUpstream(frame, error)) {
         return AnalysisResult::failure(error.empty() ? "Failed to load upstream artifacts" : error);
@@ -203,6 +216,7 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
         computeF(_options.xA, _options.yA, _options.xB, _options.yB,
                  _options.EcohA, _options.EcohB, coveraA, coveraB, _gA, _gB);
     }
+    steps.next("Finding PTM neighbors");
 
     spdlog::info("Running polyhedral template matching on {} atoms (RMSD cutoff {})...",
                  frame.positions.size(), _options.rmsdCutoff);
@@ -213,11 +227,14 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
     if(!ptm.prepare(frame.positions.data(), frame.positions.size(), frame.simulationCell)) {
         return AnalysisResult::failure("PTM prepare failed");
     }
+    steps.next("Matching PTM structures");
     IldaPtmNeighborQuery query(ptm);
     query.computeAtomStates();
     spdlog::info("Polyhedral template matching done in {}", ptmTimer.elapsed());
+    steps.next("Searching coherent interface sites");
 
     CisResult cis = findCIS(frame, _grain, _structureType, _gA, _gB, _selection, query, _options.cis_tol);
+    steps.next("Estimating the coherent reference frame");
 
     const long cisCount = std::count(cis.cis.begin(), cis.cis.end(), static_cast<std::uint8_t>(1));
 
@@ -236,6 +253,7 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
         } else {
             spdlog::info("User specified coherent reference frame");
         }
+        steps.next("Tracing a Burgers circuit");
 
         Matrix3 VA, RA, VB, RB;
         polarDecomp(_gA.F, VA, RA);
@@ -279,6 +297,7 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
                 }
             }
         }
+        steps.next("Building the CIS surface mesh");
 
         if(_options.extract_lines) {
             IldaMesh mesh;
@@ -287,6 +306,7 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
                                     _options.Rsphere, mesh)) {
                 return AnalysisResult::failure("Failed to build the CIS surface mesh");
             }
+            steps.next("Finding line defects");
 
             std::vector<IldaSegment> segments;
             std::vector<DisconnectionMode> modes;
@@ -294,6 +314,7 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
             const double angtolRad = _options.angtol * PI / 180.0;
             findDefects(mesh, ctx, _options.btol, _options.htol, angtolRad,
                         bmagmax, segments, modes, totalLength);
+            steps.next("Writing outputs");
 
             _jsonExporter.writeBondsParquet(segments, frame.simulationCell, outputBase + "_bonds.parquet");
             _jsonExporter.writeSummaryParquet(modes, totalLength,
