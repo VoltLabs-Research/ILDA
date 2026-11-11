@@ -12,6 +12,7 @@
           "modifier": {
             "name": "Interfacial Line Defect Analysis",
             "key": "ilda",
+            "category": "Defects",
             "icon": "HiCube",
             "author": "/",
             "license": "MIT",
