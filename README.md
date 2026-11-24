@@ -5,6 +5,7 @@ Extracts interfacial dislocations and disconnections at a semi-coherent interfac
 ## Install
 
 ```bash
+npm install -g @voltstack/vpm
 vpm install @voltlabs/ilda
 ```
 
