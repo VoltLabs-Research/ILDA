@@ -1,4 +1,5 @@
 #include <volt/ilda_circuit.h>
+#include <volt/ilda_log.h>
 
 #include <algorithm>
 #include <array>
@@ -8,44 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include <spdlog/spdlog.h>
-
 namespace Volt {
-
-struct Neigh {
-    double dist = 0.0;
-    int index = -1;
-    Vector3 delta{0.0, 0.0, 0.0};
-    Vector3 a1{0.0, 0.0, 0.0};
-    Matrix3 Ft2new{Matrix3::Identity()};
-    Quaternion refOri2new{0.0, 0.0, 0.0, 0.0};
-};
-
-struct Frame {
-    int atomIndex = -1;
-    Vector3 spatialSum{0.0, 0.0, 0.0};
-    Vector3 latticeSum{0.0, 0.0, 0.0};
-    Matrix3 Ft2{Matrix3::Identity()};
-    Quaternion refOri2{0.0, 0.0, 0.0, 0.0};
-    int ntry = 0;
-    bool entered = false;
-
-    Matrix3 Ft{Matrix3::Identity()};
-    int grainId = 0;
-    StructureType gs = OTHER;
-    Quaternion refOri{0.0, 0.0, 0.0, 1.0};
-    double ptmScale = 1.0;
-
-    std::vector<Neigh> neighs;
-    std::size_t nextNeighbor = 0;
-};
-
-enum class Ret { DEADEND, ABORT, SUCCESS };
-
-struct PathResult {
-    Vector3 spatialSum{0.0, 0.0, 0.0};
-    Vector3 latticeSum{0.0, 0.0, 0.0};
-};
 
 std::optional<std::pair<Matrix3, Quaternion>> getHcpFccTrans(
     const IldaPtmNeighborQuery::Neighbor& fccNeigh,
@@ -148,20 +112,22 @@ std::optional<std::pair<Matrix3, Quaternion>> getHcpFccTrans(
     return std::make_pair(Ft, hcpRefOrientation);
 }
 
+namespace IldaCircuit {
+
 bool computeGrainProps(Frame& f, const CircuitContext& ctx) {
     f.grainId = ctx.grain[static_cast<std::size_t>(f.atomIndex)];
     if(f.grainId == ctx.gA.grainId) {
         f.refOri = ctx.gA.orientation;
         f.gs = ctx.gA.structureType;
         f.Ft = ctx.gA.F;
-        f.ptmScale = scalePTMVec(ctx.gA.structureType, ctx.gA.a);
+        f.ptmScale = ctx.query.scalePTMVec(ctx.gA.structureType, ctx.gA.a);
         return true;
     }
     if(f.grainId == ctx.gB.grainId) {
         f.refOri = ctx.gB.orientation;
         f.gs = ctx.gB.structureType;
         f.Ft = ctx.gB.F;
-        f.ptmScale = scalePTMVec(ctx.gB.structureType, ctx.gB.a);
+        f.ptmScale = ctx.query.scalePTMVec(ctx.gB.structureType, ctx.gB.a);
         return true;
     }
     return false;
@@ -371,31 +337,34 @@ std::optional<PathResult> recursiveCircuitSearch(
     return std::nullopt;
 }
 
+}
+
 std::optional<CircuitResult> burgersCircuit(
     int startIndex,
     int endIndex,
-    const CircuitContext& ctx
+    const CircuitContext& ctx,
+    IldaLog& log
 ) {
     const CisResult& cis = ctx.cis;
 
     if(startIndex < 0 || endIndex < 0 ||
        static_cast<std::size_t>(startIndex) >= cis.cis.size() ||
        static_cast<std::size_t>(endIndex) >= cis.cis.size()) {
-        spdlog::warn("burgersCircuit: invalid indices {} {}", startIndex, endIndex);
+        log.dump(CircuitFailure{CircuitFailure::Reason::InvalidIndices, startIndex, endIndex});
         return std::nullopt;
     }
     if(!cis.cis[static_cast<std::size_t>(startIndex)] || !cis.cis[static_cast<std::size_t>(endIndex)]) {
-        spdlog::warn("Wrong start or end indices: not a co-incident site {} {}", startIndex, endIndex);
+        log.dump(CircuitFailure{CircuitFailure::Reason::NotCoincidentSites, startIndex, endIndex});
         return std::nullopt;
     }
     if(startIndex == endIndex) {
-        spdlog::warn("Wrong start or end indices, both are same: {}", startIndex);
+        log.dump(CircuitFailure{CircuitFailure::Reason::SameAtom, startIndex, endIndex});
         return std::nullopt;
     }
 
     const double ptmScales[2] = {
-        scalePTMVec(ctx.gA.structureType, ctx.gA.a),
-        scalePTMVec(ctx.gB.structureType, ctx.gB.a)
+        ctx.query.scalePTMVec(ctx.gA.structureType, ctx.gA.a),
+        ctx.query.scalePTMVec(ctx.gB.structureType, ctx.gB.a)
     };
     const Matrix3 Fs[2] = {ctx.gA.F, ctx.gB.F};
 
@@ -420,8 +389,8 @@ std::optional<CircuitResult> burgersCircuit(
 
         const Vector3 target = (endPoint + endDelta) - (startPoint + startDelta);
 
-        const std::optional<PathResult> circuit =
-            recursiveCircuitSearch(startNbr, startNbr, endNbr, target, ctx);
+        const std::optional<IldaCircuit::PathResult> circuit =
+            IldaCircuit::recursiveCircuitSearch(startNbr, startNbr, endNbr, target, ctx);
         if(!circuit) {
             return std::nullopt;
         }
@@ -462,8 +431,7 @@ std::optional<CircuitResult> burgersCircuit(
         return res;
     }
 
-    spdlog::warn("Warning: Not a closed circuit! {} {} spatialSum=({}, {}, {})",
-                 startIndex, endIndex, spatialSum.x(), spatialSum.y(), spatialSum.z());
+    log.dump(CircuitFailure{CircuitFailure::Reason::NotClosed, startIndex, endIndex, spatialSum});
     return std::nullopt;
 }
 

@@ -11,6 +11,8 @@
 
 namespace Volt {
 
+class IldaLog;
+
 CisResult findCIS(
     const LammpsParser::Frame& frame,
     const std::vector<int>& grain,
@@ -19,7 +21,8 @@ CisResult findCIS(
     const GrainRef& gB,
     const std::vector<std::uint8_t>& selection,
     IldaPtmNeighborQuery& query,
-    double cisTol
+    double cisTol,
+    IldaLog& log
 );
 
 }

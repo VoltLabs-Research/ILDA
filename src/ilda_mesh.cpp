@@ -2,64 +2,14 @@
 
 #include <volt/core/frame_adapter.h>
 #include <volt/core/progress.h>
+#include <volt/ilda_log.h>
 #include <volt/pipeline/delaunay_tessellation.h>
 #include <volt/helpers/manifold_construction_helper.h>
 
 #include <array>
-#include <set>
 #include <vector>
 
-#include <spdlog/spdlog.h>
-
 namespace Volt {
-
-void makeManifold(IldaMesh& mesh) {
-    auto originalVertices = mesh.vertices();
-
-    for(auto* vertex : originalVertices) {
-        if(vertex->numEdges() < 3) continue;
-
-        std::set<IldaMesh::Edge*> visitedEdges;
-        IldaMesh::Edge* startEdge = vertex->edges();
-        IldaMesh::Edge* currentEdge = startEdge;
-        do {
-            visitedEdges.insert(currentEdge);
-            currentEdge = currentEdge->oppositeEdge()->nextFaceEdge();
-        } while(currentEdge != startEdge);
-
-        if(visitedEdges.size() == vertex->numEdges()) {
-            continue;
-        }
-
-        while(visitedEdges.size() < vertex->numEdges()) {
-            IldaMesh::Vertex* newVertex = mesh.createVertex(vertex->pos());
-            newVertex->atomIndex = vertex->atomIndex;
-            newVertex->isCIS = vertex->isCIS;
-            newVertex->color = vertex->color;
-
-            IldaMesh::Edge* fanStartEdge = nullptr;
-            for(IldaMesh::Edge* e = vertex->edges(); e != nullptr; e = e->nextVertexEdge()) {
-                if(visitedEdges.find(e) == visitedEdges.end()) {
-                    fanStartEdge = e;
-                    break;
-                }
-            }
-            if(fanStartEdge == nullptr) break;
-
-            std::vector<IldaMesh::Edge*> fanToTransfer;
-            currentEdge = fanStartEdge;
-            do {
-                fanToTransfer.push_back(currentEdge);
-                visitedEdges.insert(currentEdge);
-                currentEdge = currentEdge->oppositeEdge()->nextFaceEdge();
-            } while(currentEdge != fanStartEdge);
-
-            for(IldaMesh::Edge* edgeToMove : fanToTransfer) {
-                vertex->transferEdgeToVertex(edgeToMove, newVertex);
-            }
-        }
-    }
-}
 
 bool buildCisSurfaceMesh(
     const SimulationCell& cell,
@@ -70,19 +20,16 @@ bool buildCisSurfaceMesh(
     int grainB,
     int g2s,
     double Rsphere,
-    IldaMesh& outMesh
+    IldaMesh& outMesh,
+    IldaLog& log
 ) {
     outMesh.clear();
 
     const std::size_t n = static_cast<std::size_t>(frame.natoms);
     if(n == 0 || Rsphere <= 0.0) {
-        spdlog::warn("buildCisSurfaceMesh: empty frame or non-positive Rsphere");
+        log.dump(IldaIssue::SurfaceInput);
         return false;
     }
-
-    spdlog::info("Building CIS surface mesh from grain {} and CIS atoms (alpha-shape, Rsphere={})...",
-                 grainB, Rsphere);
-    const Stopwatch timer;
 
     std::vector<int> selected(n, 0);
     for(std::size_t i = 0; i < n; ++i) {
@@ -94,7 +41,7 @@ bool buildCisSurfaceMesh(
 
     auto positions = FrameAdapter::createPositionPropertyShared(frame);
     if(!positions) {
-        spdlog::error("buildCisSurfaceMesh: failed to create position property");
+        log.dump(IldaIssue::SurfacePositions);
         return false;
     }
 
@@ -133,13 +80,12 @@ bool buildCisSurfaceMesh(
     };
 
     if(!helper.construct(determineCellRegion, prepareMeshFace)) {
-        spdlog::error("buildCisSurfaceMesh: ManifoldConstructionHelper::construct failed");
+        log.dump(IldaIssue::SurfaceConstruction);
         return false;
     }
 
-    makeManifold(outMesh);
-    spdlog::info("  Surface constructed in {}: {} faces, {} vertices",
-                 timer.elapsed(), outMesh.faceCount(), outMesh.vertexCount());
+    outMesh.makeManifold();
+    log.dump(CisSurface{outMesh});
 
     const std::size_t numVerts = outMesh.vertexCount();
     std::vector<Point3> vertexPos(numVerts);
@@ -173,7 +119,6 @@ bool buildCisSurfaceMesh(
         return vertexCis[static_cast<std::size_t>(meshVertexIndex)] ? 1 : 0;
     };
 
-    const Stopwatch pruneTimer;
     int pruneCount = 0;
     while(true) {
         std::vector<std::size_t> selectedFaces;
@@ -230,13 +175,10 @@ bool buildCisSurfaceMesh(
 
         ++pruneCount;
         if(pruneCount > ILDA_PRUNE_MAX) {
-            spdlog::warn("Number of surface mesh pruning events exceeded {} - pruning was aborted",
-                         ILDA_PRUNE_MAX);
             break;
         }
     }
-
-    spdlog::info("  Pruned {} non-CIS atoms from the surface mesh in {}", pruneCount, pruneTimer.elapsed());
+    log.dump(SurfacePruning{pruneCount});
 
     outMesh.clear();
     outMesh.reserveVertices(numVerts);
@@ -255,11 +197,8 @@ bool buildCisSurfaceMesh(
         });
     }
 
-    if(!outMesh.connectOppositeHalfedges()) {
-        spdlog::warn("Unable to connect opposite half edges of the pruned surface mesh.");
-    }
-
-    spdlog::info("CIS surface mesh ready in {}: {} faces", timer.elapsed(), outMesh.faceCount());
+    const bool halfEdgesConnected = outMesh.connectOppositeHalfedges();
+    log.dump(CisSurfaceMesh{outMesh, halfEdgesConnected});
     return true;
 }
 

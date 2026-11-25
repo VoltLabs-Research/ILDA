@@ -11,6 +11,8 @@
 
 namespace Volt {
 
+class IldaLog;
+
 class IldaPtmNeighborQuery {
 public:
     struct Neighbor {
@@ -27,7 +29,8 @@ public:
         std::uint8_t valid = 0;
     };
 
-    explicit IldaPtmNeighborQuery(PTM& ptm);
+    // The log takes the warnings of the queries.
+    IldaPtmNeighborQuery(PTM& ptm, IldaLog& log);
 
     void computeAtomStates();
 
@@ -43,15 +46,17 @@ public:
 
     const Neighbor& operator[](int slot) const { return _neighbors[static_cast<std::size_t>(slot)]; }
 
+    // The factor that takes the template vectors of a structure to a lattice of constant a.
+    double scalePTMVec(StructureType type, double a) const;
+
 private:
     PTM& _ptm;
+    IldaLog& _log;
     std::vector<AtomState> _states;
     std::vector<Neighbor> _neighbors;
     StructureType _structureType = OTHER;
     Quaternion _orientation{0.0, 0.0, 0.0, 1.0};
 };
-
-double scalePTMVec(StructureType type, double a);
 
 double scalePTMInteratomicDistance(StructureType type, double a);
 

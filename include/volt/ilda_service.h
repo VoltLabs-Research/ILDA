@@ -17,6 +17,9 @@ namespace Volt {
 
 using json = nlohmann::json;
 
+class IldaLog;
+struct CircuitContext;
+
 class ILDA {
 public:
     ILDA();
@@ -27,11 +30,13 @@ public:
     json run(const LammpsParser::Frame& frame, const std::string& outputBase);
 
 private:
-    bool loadUpstream(const LammpsParser::Frame& frame, std::string& error);
+    bool loadUpstream(const LammpsParser::Frame& frame, std::string& error, IldaLog& log);
 
     int particleIdToIndex(int particleId) const;
 
     bool resolveGrains(std::string& error);
+
+    SingleCircuit traceSingleCircuit(const CisResult& cis, const CircuitContext& ctx, IldaLog& log) const;
 
     IldaOptions _options;
     IldaJsonExporter _jsonExporter;

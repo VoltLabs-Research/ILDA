@@ -7,10 +7,33 @@
 #include <volt/math/quaternion.h>
 #include <volt/math/vector3.h>
 
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
 namespace Volt {
+
+class IldaLog;
+
+namespace IldaCrf {
+
+inline Matrix3 outer(const Vector3& u, const Vector3& w) {
+    return Matrix3(
+        u.x() * w.x(), u.x() * w.y(), u.x() * w.z(),
+        u.y() * w.x(), u.y() * w.y(), u.y() * w.z(),
+        u.z() * w.x(), u.z() * w.y(), u.z() * w.z()
+    );
+}
+
+inline Quaternion rotMatToQuat(const Matrix3& R) {
+    const double qw = std::sqrt(1.0 + R(0, 0) + R(1, 1) + R(2, 2)) / 2.0;
+    const double qx = (R(2, 1) - R(1, 2)) / (4.0 * qw);
+    const double qy = (R(0, 2) - R(2, 0)) / (4.0 * qw);
+    const double qz = (R(1, 0) - R(0, 1)) / (4.0 * qw);
+    return Quaternion(qx, qy, qz, qw);
+}
+
+}
 
 void polarDecomp(const Matrix3& F, Matrix3& V, Matrix3& R);
 
@@ -30,7 +53,8 @@ void estimateF(
     double distF,
     IldaPtmNeighborQuery& query,
     GrainRef& gA,
-    GrainRef& gB
+    GrainRef& gB,
+    IldaLog& log
 );
 
 void computeF(

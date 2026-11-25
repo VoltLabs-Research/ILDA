@@ -3,33 +3,13 @@
 #include <volt/core/frame_adapter.h>
 #include <volt/core/progress.h>
 #include <volt/analysis/nearest_neighbor_finder.h>
+#include <volt/ilda_log.h>
 
 #include <array>
 #include <cmath>
 #include <vector>
 
-#include <spdlog/spdlog.h>
-
 namespace Volt {
-
-Matrix3 quatToRotMat(const Quaternion& q) {
-    const double qx = q.x();
-    const double qy = q.y();
-    const double qz = q.z();
-    const double qw = q.w();
-
-    Matrix3 R{Matrix3::Zero()};
-    R(0, 0) = 1.0 - 2.0 * (qy * qy + qz * qz);
-    R(0, 1) = 2.0 * (qx * qy - qw * qz);
-    R(0, 2) = 2.0 * (qx * qz + qw * qy);
-    R(1, 0) = 2.0 * (qx * qy + qw * qz);
-    R(1, 1) = 1.0 - 2.0 * (qx * qx + qz * qz);
-    R(1, 2) = 2.0 * (qy * qz - qw * qx);
-    R(2, 0) = 2.0 * (qx * qz - qw * qy);
-    R(2, 1) = 2.0 * (qy * qz + qw * qx);
-    R(2, 2) = 1.0 - 2.0 * (qx * qx + qy * qy);
-    return R;
-}
 
 CisResult findCIS(
     const LammpsParser::Frame& frame,
@@ -39,7 +19,8 @@ CisResult findCIS(
     const GrainRef& gB,
     const std::vector<std::uint8_t>& selection,
     IldaPtmNeighborQuery& query,
-    double cisTol
+    double cisTol,
+    IldaLog& log
 ) {
     const std::size_t n = static_cast<std::size_t>(frame.natoms);
 
@@ -54,22 +35,21 @@ CisResult findCIS(
         return result;
     }
 
-    spdlog::info("Finding co-incident sites (CIS) between grain {} and grain {} (cis_tol={})...",
-                 gA.grainId, gB.grainId, cisTol);
-    const Stopwatch timer;
-
     const std::array<const GrainRef*, 2> grains{&gA, &gB};
 
     auto positions = FrameAdapter::createPositionPropertyShared(frame);
     if(!positions) {
-        spdlog::error("findCIS: failed to create position property");
+        log.dump(IldaIssue::CisPositions);
         return result;
     }
-    // Indexing the atoms, scanning grain atoms for interface candidates, then matching the sites.
-    ProgressSteps steps({1.0, 3.0, 1.0});
+    ProgressSteps steps({
+        {"Indexing the atoms", 1.0},
+        {"Finding interface candidates", 3.0},
+        {"Matching co-incident sites", 1.0},
+    });
     NearestNeighborFinder finder(26);
     if(!finder.prepare(positions.get(), frame.simulationCell)) {
-        spdlog::error("findCIS: NearestNeighborFinder::prepare failed");
+        log.dump(IldaIssue::CisNeighborLists);
         return result;
     }
     steps.next();
@@ -111,20 +91,20 @@ CisResult findCIS(
             }
             scanProgress.update(++scanned);
         }
-        spdlog::info("  Found {} interface candidates among {} grain A and {} grain B atoms in {}",
-                     g1g2candidates.size(), grainAAtoms, grainBAtoms, scanProgress.elapsed());
     }
+    log.dump(InterfaceCandidates{g1g2candidates.size(), grainAAtoms, grainBAtoms});
+
     steps.next();
 
     std::array<std::vector<Vector3>, 2> idealVecs;
     std::array<std::vector<Vector3>, 2> rotIdealVecs;
     std::array<Matrix3, 2> grainRs{
-        quatToRotMat(gA.tableOrientation),
-        quatToRotMat(gB.tableOrientation)
+        Matrix3::rotation(gA.tableOrientation),
+        Matrix3::rotation(gB.tableOrientation)
     };
     std::array<double, 2> grainScales{
-        scalePTMInteratomicDistance(gA.structureType, 1.0) * scalePTMVec(gA.structureType, 1.0),
-        scalePTMInteratomicDistance(gB.structureType, 1.0) * scalePTMVec(gB.structureType, 1.0)
+        scalePTMInteratomicDistance(gA.structureType, 1.0) * query.scalePTMVec(gA.structureType, 1.0),
+        scalePTMInteratomicDistance(gB.structureType, 1.0) * query.scalePTMVec(gB.structureType, 1.0)
     };
     for(int grainInd = 0; grainInd < 2; ++grainInd) {
         const int targetGrainId = grains[grainInd]->grainId;
@@ -153,10 +133,7 @@ CisResult findCIS(
         }
         // The reference vectors come from the grain's first atom only; when PTM left that atom
         // unmatched the list is empty and the cis_tol extension below can never match.
-        if(cisTol > 0.0 && idealVecs[grainInd].empty()) {
-            spdlog::warn("The first atom of grain {} has no PTM neighbors to take reference lattice vectors "
-                         "from: cis_tol has no effect for this grain", targetGrainId);
-        }
+        log.dump(ReferenceLatticeVectors{targetGrainId, !idealVecs[grainInd].empty(), cisTol});
     }
 
     ProgressReporter matchProgress("  Matching co-incident sites", g1g2candidates.size());
@@ -260,12 +237,7 @@ CisResult findCIS(
         }
     }
 
-    long cisCount = 0;
-    for(const auto v : result.cis) {
-        cisCount += v;
-    }
-    spdlog::info("Found {} CIS atoms in {}", cisCount, timer.elapsed());
-
+    log.dump(result);
     return result;
 }
 

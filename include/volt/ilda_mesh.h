@@ -10,6 +10,8 @@
 
 namespace Volt {
 
+class IldaLog;
+
 inline constexpr int ILDA_PRUNE_MAX = 10000;
 
 bool buildCisSurfaceMesh(
@@ -21,7 +23,8 @@ bool buildCisSurfaceMesh(
     int grainB,
     int g2s,
     double Rsphere,
-    IldaMesh& outMesh
+    IldaMesh& outMesh,
+    IldaLog& log
 );
 
 }

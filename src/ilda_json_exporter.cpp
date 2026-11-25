@@ -4,8 +4,6 @@
 
 #include <vector>
 
-#include <spdlog/spdlog.h>
-
 namespace Volt {
 
 void IldaJsonExporter::writeBondsParquet(
@@ -44,8 +42,6 @@ void IldaJsonExporter::writeBondsParquet(
             writer.field("length", (s.pos2 - s.pos1).length());
         }
     );
-
-    spdlog::info("Wrote ILDA line segments -> {}", filePath);
 }
 
 void IldaJsonExporter::writeSummaryParquet(
@@ -89,8 +85,6 @@ void IldaJsonExporter::writeSummaryParquet(
     };
 
     JsonUtils::writeJsonToParquet(payload, filePath);
-    spdlog::info("Wrote ILDA summary ({} modes, {} variants, L={:.3f}) -> {}",
-                 Nb, variantTotal, totalLength, filePath);
 }
 
 }

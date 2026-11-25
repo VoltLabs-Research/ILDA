@@ -3,6 +3,7 @@
 #include <volt/core/frame_adapter.h>
 #include <volt/core/progress.h>
 #include <volt/analysis/cutoff_neighbor_finder.h>
+#include <volt/ilda_log.h>
 #include <volt/math/affine_decomposition.h>
 #include <volt/math/affine_transformation.h>
 
@@ -11,25 +12,10 @@
 #include <set>
 #include <vector>
 
-#include <spdlog/spdlog.h>
-
 namespace Volt {
 
-inline Matrix3 outer(const Vector3& u, const Vector3& w) {
-    return Matrix3(
-        u.x() * w.x(), u.x() * w.y(), u.x() * w.z(),
-        u.y() * w.x(), u.y() * w.y(), u.y() * w.z(),
-        u.z() * w.x(), u.z() * w.y(), u.z() * w.z()
-    );
-}
-
-inline Quaternion rotMatToQuat(const Matrix3& R) {
-    const double qw = std::sqrt(1.0 + R(0, 0) + R(1, 1) + R(2, 2)) / 2.0;
-    const double qx = (R(2, 1) - R(1, 2)) / (4.0 * qw);
-    const double qy = (R(0, 2) - R(2, 0)) / (4.0 * qw);
-    const double qz = (R(1, 0) - R(0, 1)) / (4.0 * qw);
-    return Quaternion(qx, qy, qz, qw);
-}
+using IldaCrf::outer;
+using IldaCrf::rotMatToQuat;
 
 void polarDecomp(const Matrix3& F, Matrix3& V, Matrix3& R) {
     const AffineTransformation tm(
@@ -59,7 +45,7 @@ Matrix3 totalDeformationGradPTM(
     const GrainRef& grain,
     IldaPtmNeighborQuery& query
 ) {
-    const double a = scalePTMVec(type, grain.a);
+    const double a = query.scalePTMVec(type, grain.a);
 
     query.findNeighbors(particleIndex, &grain.orientation);
 
@@ -84,27 +70,28 @@ void estimateF(
     double distF,
     IldaPtmNeighborQuery& query,
     GrainRef& gA,
-    GrainRef& gB
+    GrainRef& gB,
+    IldaLog& log
 ) {
     const std::size_t n = static_cast<std::size_t>(frame.natoms);
     const std::size_t cisAtoms = static_cast<std::size_t>(
         std::count(cis.cis.begin(), cis.cis.end(), static_cast<std::uint8_t>(1)));
-    spdlog::info("Estimating coherent reference frame from atoms within distF={} of {} CIS atoms...",
-                 distF, cisAtoms);
-    const Stopwatch timer;
 
     auto positions = FrameAdapter::createPositionPropertyShared(frame);
     if(!positions) {
-        spdlog::error("estimateF: failed to create position property");
+        log.dump(IldaIssue::InterfaceSkinPositions);
         gA.F = Matrix3::Identity();
         gB.F = Matrix3::Identity();
         return;
     }
-    // Binning the atoms, collecting those near CIS sites, then fitting their deformation gradients.
-    ProgressSteps steps({1.0, 1.0, 2.0});
+    ProgressSteps steps({
+        {"Binning the atoms", 1.0},
+        {"Collecting atoms near CIS sites", 1.0},
+        {"Fitting deformation gradients", 2.0},
+    });
     CutoffNeighborFinder finder;
     if(!finder.prepare(distF, positions.get(), frame.simulationCell)) {
-        spdlog::error("estimateF: CutoffNeighborFinder::prepare failed");
+        log.dump(IldaIssue::InterfaceSkinNeighborLists);
         gA.F = Matrix3::Identity();
         gB.F = Matrix3::Identity();
         return;
@@ -125,7 +112,8 @@ void estimateF(
             gatherProgress.update(++visitedCis);
         }
     }
-    spdlog::info("  Collected {} atoms within distF of the interface in {}", neighborSet.size(), timer.elapsed());
+    log.dump(InterfaceSkin{neighborSet.size()});
+
     steps.next();
 
     Matrix3 FsumA{Matrix3::Zero()};
@@ -167,24 +155,14 @@ void estimateF(
     if(NA > 0) {
         gA.F = FsumA * (1.0 / static_cast<double>(NA));
     } else {
-        spdlog::warn("estimateF: no atoms found to estimate FA");
         gA.F = Matrix3::Identity();
     }
     if(NB > 0) {
         gB.F = FsumB * (1.0 / static_cast<double>(NB));
     } else {
-        spdlog::warn("estimateF: no atoms found to estimate FB");
         gB.F = Matrix3::Identity();
     }
-
-    spdlog::info("  Used {} and {} atoms to estimate FA and FB, respectively.", NA, NB);
-
-    Matrix3 VA, RA, VB, RB;
-    polarDecomp(gA.F, VA, RA);
-    polarDecomp(gB.F, VB, RB);
-    spdlog::info("Estimated coherent reference frame (with polar decomposition) in {}: "
-                 "trace(VA)={:.6f}, trace(VB)={:.6f}",
-                 timer.elapsed(), VA(0, 0) + VA(1, 1) + VA(2, 2), VB(0, 0) + VB(1, 1) + VB(2, 2));
+    log.dump(DeformationGradientFit{NA, NB, gA, gB});
 }
 
 void computeF(
@@ -194,13 +172,6 @@ void computeF(
     double coveraA, double coveraB,
     GrainRef& gA, GrainRef& gB
 ) {
-    if(std::abs(xA.dot(yA)) > 1e-6) {
-        spdlog::error("computeF: xA and yA are not orthogonal!");
-    }
-    if(std::abs(xB.dot(yB)) > 1e-6) {
-        spdlog::error("computeF: xB and yB are not orthogonal!");
-    }
-
     Vector3 zA = xA.cross(yA);
     Vector3 zB = xB.cross(yB);
 

@@ -1,6 +1,7 @@
 #include <volt/ilda_defects.h>
 #include <volt/ilda_plane.h>
 #include <volt/ilda_circuit.h>
+#include <volt/ilda_log.h>
 #include <volt/core/progress.h>
 
 #include <algorithm>
@@ -10,8 +11,6 @@
 #include <limits>
 #include <optional>
 #include <vector>
-
-#include <spdlog/spdlog.h>
 
 namespace Volt {
 
@@ -39,6 +38,8 @@ const Vector3 ILDA_COLORLIST[20] = {
 };
 
 constexpr double ILDA_EPS = 1e-6;
+
+namespace IldaDefects {
 
 double vecAngle(const Vector3& v1, const Vector3& v2) {
     const double l1 = std::sqrt(v1.dot(v1));
@@ -137,8 +138,6 @@ int getId2(double bnorm, double hA, double hB, double btol,
     return -1;
 }
 
-enum class Edge1Kind { NoAtom, UsePcount, Real };
-
 void setMidedge(IldaMesh::Edge* e, int value) {
     e->midedgeAtom = value;
     if(e->oppositeEdge()) {
@@ -175,6 +174,10 @@ std::pair<int, int> segmentAtom(Edge1Kind kind, IldaMesh::Edge* edge1,
     return { atom1, atom2 };
 }
 
+}
+
+using namespace IldaDefects;
+
 void findDefects(
     IldaMesh& mesh,
     const CircuitContext& ctx,
@@ -184,15 +187,12 @@ void findDefects(
     double bmagmax,
     std::vector<IldaSegment>& outSegments,
     std::vector<DisconnectionMode>& outModes,
-    double& outTotalLength
+    double& outTotalLength,
+    IldaLog& log
 ) {
     outSegments.clear();
     outModes.clear();
     outTotalLength = 0.0;
-
-    spdlog::info("Extracting line defects from {} mesh faces (btol={}, htol={}, angtol={:.3g} deg)...",
-                 mesh.faceCount(), btol, htol, angtol * 180.0 / PI);
-    const Stopwatch timer;
 
     const SimulationCell& cell = ctx.cell;
     const CisResult& cis = ctx.cis;
@@ -218,7 +218,6 @@ void findDefects(
     const std::size_t vertexCount = mesh.vertexCount();
     std::vector<std::uint8_t> pbcFailVertices(vertexCount, 0);
     const auto& pbc = cell.pbcFlags();
-    bool anyPbcFail = false;
     std::size_t pbcFailFaces = 0;
     for(IldaMesh::Face* f : mesh.faces()) {
         IldaMesh::Edge* e1 = f->edges();
@@ -249,16 +248,12 @@ void findDefects(
                         pbcFailVertices[static_cast<std::size_t>(vi)] = 1;
                     }
                 }
-                anyPbcFail = true;
                 faceFails = true;
             }
         }
         if(faceFails) ++pbcFailFaces;
     }
-    if(anyPbcFail) {
-        spdlog::warn("{} mesh faces are too large to use periodic boundary "
-                     "conditions, these have been skipped by ILDA", pbcFailFaces);
-    }
+    log.dump(PeriodicFaces{pbcFailFaces});
 
     auto faceFail = [&](IldaMesh::Vertex* v) -> bool {
         const int vi = v->index();
@@ -277,9 +272,7 @@ void findDefects(
     bool printedMeshWarning = false;
     ProgressReporter circuitProgress("  Tracing Burgers circuits", mesh.faceCount());
     std::size_t facesVisited = 0;
-    std::size_t circuitsTraced = 0;
-    std::size_t circuitsAboveTol = 0;
-    std::size_t circuitsFailed = 0;
+    CircuitTally circuits;
     for(IldaMesh::Face* f : mesh.faces()) {
         circuitProgress.update(facesVisited++);
         IldaMesh::Edge* e1 = f->edges();
@@ -302,27 +295,25 @@ void findDefects(
                 const int atom2 = v2->atomIndex;
                 if(!selOf(atom1) || !selOf(atom2)) continue;
                 if(cisOf(atom1) && cisOf(atom2)) {
-                    std::optional<CircuitResult> out = burgersCircuit(atom1, atom2, ctx);
-                    ++circuitsTraced;
+                    std::optional<CircuitResult> out = burgersCircuit(atom1, atom2, ctx, log);
+                    ++circuits.traced;
                     if(out) {
                         edge->burgers = out->latticeSum;
                         edge->stepIdealA = out->hA;
                         edge->stepIdealB = out->hB;
                         edge->bnorm = edge->burgers.length();
-                        if(edge->bnorm > btol) ++circuitsAboveTol;
+                        if(edge->bnorm > btol) ++circuits.aboveTolerance;
                     } else {
-                        ++circuitsFailed;
+                        ++circuits.failed;
                     }
                 } else if(cisOf(atom1) != cisOf(atom2) && !printedMeshWarning) {
-                    spdlog::warn("Mesh edge connects CIS atom to non-CIS atom, "
-                                 "Rsphere probably needs to be increased");
+                    log.dump(IldaIssue::MixedCisMeshEdge);
                     printedMeshWarning = true;
                 }
             }
         }
     }
-    spdlog::info("  Traced {} Burgers circuits in {} ({} with |b| > btol, {} failed)",
-                 circuitsTraced, circuitProgress.elapsed(), circuitsAboveTol, circuitsFailed);
+    log.dump(circuits);
 
     for(IldaMesh::Face* f : mesh.faces()) {
         IldaMesh::Edge* e1 = f->edges();
@@ -410,8 +401,6 @@ void findDefects(
 
     const bool noTerraceNormal = (ctx.n.length() < ILDA_EPS);
     if(noTerraceNormal) {
-        spdlog::warn("Terrace plane normal in coherent reference frame, n, not "
-                     "specified, cannot determine ideal step heights");
         const double nan = std::numeric_limits<double>::quiet_NaN();
         for(IldaMesh::Face* f : mesh.faces()) {
             IldaMesh::Edge* e = f->edges();
@@ -707,9 +696,7 @@ void findDefects(
         outModes.push_back(std::move(mode));
     }
     outTotalLength = Ltotal;
-
-    spdlog::info("Found {} unique disconnection modes and {} line segments in {} (total line length {:.3f})",
-                 Nb, outSegments.size(), timer.elapsed(), Ltotal);
+    log.dump(DefectLines{outSegments, outModes, Ltotal, noTerraceNormal});
 }
 
 }

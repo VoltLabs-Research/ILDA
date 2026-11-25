@@ -1,44 +1,20 @@
 #include <volt/ilda_service.h>
 #include <volt/ilda_cis.h>
 #include <volt/ilda_crf.h>
+#include <volt/ilda_log.h>
 #include <volt/ilda_mesh.h>
 #include <volt/ilda_circuit.h>
 #include <volt/ilda_defects.h>
 #include <volt/ilda_ptm_neighbor_query.h>
 #include <volt/analysis/ptm.h>
 #include <volt/core/progress.h>
-
-#include <duckdb.hpp>
+#include <volt/utilities/json_utils.h>
 
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
 #include <unordered_map>
-#include <spdlog/spdlog.h>
 
 namespace Volt {
-
-json readPayloadParquet(const std::string& path) {
-    duckdb::DuckDB db(nullptr);
-    duckdb::Connection con(db);
-
-    std::string quoted = "'";
-    for(char c : path) {
-        if(c == '\'') quoted.push_back('\'');
-        quoted.push_back(c);
-    }
-    quoted.push_back('\'');
-
-    auto result = con.Query("SELECT payload FROM read_parquet(" + quoted + ")");
-    if(result->HasError()) {
-        throw std::runtime_error("DuckDB read of " + path + " failed: " + result->GetError());
-    }
-    if(result->RowCount() == 0) {
-        throw std::runtime_error("Parquet " + path + " has no rows");
-    }
-    const std::string payload = result->GetValue(0, 0).ToString();
-    return json::parse(payload);
-}
 
 ILDA::ILDA() = default;
 
@@ -48,7 +24,7 @@ int ILDA::particleIdToIndex(int particleId) const {
     return it->second;
 }
 
-bool ILDA::loadUpstream(const LammpsParser::Frame& frame, std::string& error) {
+bool ILDA::loadUpstream(const LammpsParser::Frame& frame, std::string& error, IldaLog& log) {
     const std::size_t n = static_cast<std::size_t>(frame.natoms);
 
     _particleIds = frame.ids;
@@ -68,12 +44,9 @@ bool ILDA::loadUpstream(const LammpsParser::Frame& frame, std::string& error) {
         return false;
     }
 
-    spdlog::info("Loading grain-segmentation results...");
-    Stopwatch timer;
-
     json atomsDoc;
     try {
-        atomsDoc = readPayloadParquet(_options.grainAtomsPath);
+        atomsDoc = JsonUtils::readJsonFromParquet(_options.grainAtomsPath);
     } catch(const std::exception& e) {
         error = std::string("Could not read grain-atoms parquet: ") + e.what();
         return false;
@@ -97,17 +70,11 @@ bool ILDA::loadUpstream(const LammpsParser::Frame& frame, std::string& error) {
         _structureType[idx] = a.value("structure_id", static_cast<int>(OTHER));
         ++aligned;
     }
-    spdlog::info("  Aligned {}/{} atoms to grain labels from {} in {}",
-                 aligned, n, _options.grainAtomsPath, timer.elapsed());
-    if(aligned != n) {
-        spdlog::warn("{} atoms in the frame were not present in the grain-atoms parquet "
-                     "and stay unassigned (grain 0, OTHER)", n - aligned);
-    }
+    log.dump(GrainLabels{aligned, n, _options.grainAtomsPath});
 
-    timer.restart();
     json grainsDoc;
     try {
-        grainsDoc = readPayloadParquet(_options.grainsPath);
+        grainsDoc = JsonUtils::readJsonFromParquet(_options.grainsPath);
     } catch(const std::exception& e) {
         error = std::string("Could not read grains parquet: ") + e.what();
         return false;
@@ -130,7 +97,7 @@ bool ILDA::loadUpstream(const LammpsParser::Frame& frame, std::string& error) {
         }
         _grainTable[e.id] = e;
     }
-    spdlog::info("  Loaded {} grains from {} in {}", _grainTable.size(), _options.grainsPath, timer.elapsed());
+    log.dump(GrainTable{_grainTable.size(), _options.grainsPath});
 
     return true;
 }
@@ -177,65 +144,76 @@ bool ILDA::resolveGrains(std::string& error) {
 
     if(!resolveOne(_gA, g1Id, 0, _options.typeA, _options.aA, _options.cA)) return false;
     if(!resolveOne(_gB, g2Id, 1, _options.typeB, _options.aB, _options.cB)) return false;
-
-    spdlog::info("Grain A: id={} type={} | grain B: id={} type={}",
-                 _gA.grainId, structureTypeName(_gA.structureType),
-                 _gB.grainId, structureTypeName(_gB.structureType));
     return true;
+}
+
+SingleCircuit ILDA::traceSingleCircuit(const CisResult& cis, const CircuitContext& ctx, IldaLog& log) const {
+    SingleCircuit circuit{SingleCircuit::Outcome::InvalidAtom, _options.circuitAtom1, _options.circuitAtom2};
+    const int idx1 = particleIdToIndex(_options.circuitAtom1);
+    const int idx2 = particleIdToIndex(_options.circuitAtom2);
+    if(idx1 < 0 || idx2 < 0) {
+        return circuit;
+    }
+    if(!cis.cis[static_cast<std::size_t>(idx1)] || !cis.cis[static_cast<std::size_t>(idx2)]) {
+        circuit.outcome = SingleCircuit::Outcome::NotCoincidentSites;
+        return circuit;
+    }
+    circuit.outcome = SingleCircuit::Outcome::Traced;
+    circuit.circuit = burgersCircuit(idx1, idx2, ctx, log);
+    return circuit;
 }
 
 json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) {
     const bool tracesCircuits = _options.single_circuit || _options.extract_lines;
-    // Loading the grain segmentation, PTM neighbors, PTM structures, CIS search, the reference
-    // frame estimate, the single circuit, the CIS surface mesh, line defects and outputs; the
-    // parts this run's options skip weigh nothing. No timed runs to go by: estimates.
+    // No timed runs to go by: the weights are estimates.
     ProgressSteps steps({
-        1.5, 1.0, 4.0, 3.0,
-        tracesCircuits && _options.estimateF ? 1.0 : 0.0,
-        _options.single_circuit ? 0.1 : 0.0,
-        _options.extract_lines ? 3.0 : 0.0,
-        _options.extract_lines ? 2.0 : 0.0,
-        _options.extract_lines ? 0.2 : 0.0
+        {"Loading the grain segmentation", 1.5},
+        {"Finding PTM neighbors", 1.0},
+        {"Matching PTM structures", 4.0},
+        {"Searching coherent interface sites", 3.0},
+        {"Estimating the coherent reference frame", 1.0, tracesCircuits && _options.estimateF},
+        {"Tracing a Burgers circuit", 0.1, _options.single_circuit},
+        {"Building the CIS surface mesh", 3.0, _options.extract_lines},
+        {"Finding line defects", 2.0, _options.extract_lines},
+        {"Writing outputs", 0.2, _options.extract_lines},
     });
-    JobProgress::instance().setText("Loading the grain segmentation");
+    IldaLog log;
     std::string error;
-    if(!loadUpstream(frame, error)) {
+    if(!loadUpstream(frame, error, log)) {
         return AnalysisResult::failure(error.empty() ? "Failed to load upstream artifacts" : error);
     }
     if(!resolveGrains(error)) {
         return AnalysisResult::failure(error.empty() ? "Failed to resolve grains" : error);
     }
-    if(!_options.single_circuit && !_options.extract_lines) {
-        spdlog::warn("Neither extract_lines nor single_circuit is enabled: only CIS atoms are detected, "
-                     "no line defects are written");
-    }
+    log.dump(ResolvedGrains{_gA, _gB});
+    log.dump(_options);
 
     if(!_options.estimateF) {
         const double coveraA = (_options.aA > 0.0) ? _options.cA / _options.aA : 0.0;
         const double coveraB = (_options.aB > 0.0) ? _options.cB / _options.aB : 0.0;
+        log.dump(ReferenceFrameAxes{_options.xA, _options.yA, _options.xB, _options.yB});
         computeF(_options.xA, _options.yA, _options.xB, _options.yB,
                  _options.EcohA, _options.EcohB, coveraA, coveraB, _gA, _gB);
     }
-    steps.next("Finding PTM neighbors");
 
-    spdlog::info("Running polyhedral template matching on {} atoms (RMSD cutoff {})...",
-                 frame.positions.size(), _options.rmsdCutoff);
-    const Stopwatch ptmTimer;
+    steps.next();
     PTM ptm;
     ptm.setRmsdCutoff(_options.rmsdCutoff);
     ptm.setCalculateDefGradient(false);
     if(!ptm.prepare(frame.positions.data(), frame.positions.size(), frame.simulationCell)) {
         return AnalysisResult::failure("PTM prepare failed");
     }
-    steps.next("Matching PTM structures");
-    IldaPtmNeighborQuery query(ptm);
+    log.dump(ptm);
+
+    steps.next();
+    IldaPtmNeighborQuery query(ptm, log);
     query.computeAtomStates();
-    spdlog::info("Polyhedral template matching done in {}", ptmTimer.elapsed());
-    steps.next("Searching coherent interface sites");
+    log.dump(query);
 
-    CisResult cis = findCIS(frame, _grain, _structureType, _gA, _gB, _selection, query, _options.cis_tol);
-    steps.next("Estimating the coherent reference frame");
+    steps.next();
+    CisResult cis = findCIS(frame, _grain, _structureType, _gA, _gB, _selection, query, _options.cis_tol, log);
 
+    steps.next();
     const long cisCount = std::count(cis.cis.begin(), cis.cis.end(), static_cast<std::uint8_t>(1));
 
     json result = AnalysisResult::success();
@@ -249,18 +227,16 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
         }
 
         if(_options.estimateF) {
-            estimateF(frame, cis, _grain, _structureType, _selection, _options.distF, query, _gA, _gB);
+            estimateF(frame, cis, _grain, _structureType, _selection, _options.distF, query, _gA, _gB, log);
         } else {
-            spdlog::info("User specified coherent reference frame");
+            log.dump(UserReferenceFrame{_gA, _gB});
         }
-        steps.next("Tracing a Burgers circuit");
 
+        steps.next();
         Matrix3 VA, RA, VB, RB;
         polarDecomp(_gA.F, VA, RA);
         polarDecomp(_gB.F, VB, RB);
-        const double trA = VA[0][0] + VA[1][1] + VA[2][2];
-        const double trB = VB[0][0] + VB[1][1] + VB[2][2];
-        const double bmagmax = std::max(_gA.a * trA / 3.0, _gB.a * trB / 3.0);
+        const double bmagmax = std::max(_gA.a * VA.trace() / 3.0, _gB.a * VB.trace() / 3.0);
 
         CircuitContext ctx{
             frame, frame.simulationCell, frame.positions,
@@ -269,57 +245,42 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
         };
 
         if(_options.single_circuit) {
-            const int idx1 = particleIdToIndex(_options.circuitAtom1);
-            const int idx2 = particleIdToIndex(_options.circuitAtom2);
-            if(idx1 < 0 || idx2 < 0) {
-                spdlog::error("Error: invalid single circuit atom identifier");
-            } else if(!cis.cis[static_cast<std::size_t>(idx1)] || !cis.cis[static_cast<std::size_t>(idx2)]) {
-                spdlog::error("Error: Cannot construct specified Burgers circuit because "
-                              "one or both atoms is not a CIS atom");
-            } else {
-                auto circuitResult = burgersCircuit(idx1, idx2, ctx);
-                if(circuitResult) {
-                    spdlog::info("Info for Burgers circuit using atoms {} and {}:",
-                                 _options.circuitAtom1, _options.circuitAtom2);
-                    spdlog::info("b = ({}, {}, {})",
-                                 circuitResult->latticeSum.x(), circuitResult->latticeSum.y(),
-                                 circuitResult->latticeSum.z());
-                    spdlog::info("Ideal step height A = {:.3f}", circuitResult->hA);
-                    spdlog::info("Ideal step height B = {:.3f}", circuitResult->hB);
-                    result["single_circuit"] = {
-                        {"b", {circuitResult->latticeSum.x(), circuitResult->latticeSum.y(),
-                               circuitResult->latticeSum.z()}},
-                        {"hA", circuitResult->hA},
-                        {"hB", circuitResult->hB}
-                    };
-                } else {
-                    spdlog::warn("single_circuit produced no closed circuit");
-                }
+            const SingleCircuit circuit = traceSingleCircuit(cis, ctx, log);
+            log.dump(circuit);
+            if(circuit.circuit) {
+                result["single_circuit"] = {
+                    {"b", {circuit.circuit->latticeSum.x(), circuit.circuit->latticeSum.y(),
+                           circuit.circuit->latticeSum.z()}},
+                    {"hA", circuit.circuit->hA},
+                    {"hB", circuit.circuit->hB}
+                };
             }
         }
-        steps.next("Building the CIS surface mesh");
 
+        steps.next();
         if(_options.extract_lines) {
             IldaMesh mesh;
             if(!buildCisSurfaceMesh(frame.simulationCell, frame, cis.cis, _grain,
                                     _structureType, _gB.grainId, _gB.structureType,
-                                    _options.Rsphere, mesh)) {
+                                    _options.Rsphere, mesh, log)) {
                 return AnalysisResult::failure("Failed to build the CIS surface mesh");
             }
-            steps.next("Finding line defects");
 
+            steps.next();
             std::vector<IldaSegment> segments;
             std::vector<DisconnectionMode> modes;
             double totalLength = 0.0;
             const double angtolRad = _options.angtol * PI / 180.0;
             findDefects(mesh, ctx, _options.btol, _options.htol, angtolRad,
-                        bmagmax, segments, modes, totalLength);
-            steps.next("Writing outputs");
+                        bmagmax, segments, modes, totalLength, log);
 
-            _jsonExporter.writeBondsParquet(segments, frame.simulationCell, outputBase + "_bonds.parquet");
-            _jsonExporter.writeSummaryParquet(modes, totalLength,
-                                              static_cast<int>(modes.size()),
-                                              outputBase + "_disconnection_summary.parquet");
+            steps.next();
+            const std::string bondsPath = outputBase + "_bonds.parquet";
+            _jsonExporter.writeBondsParquet(segments, frame.simulationCell, bondsPath);
+            log.dump(WrittenLineSegments{bondsPath});
+            const std::string summaryPath = outputBase + "_disconnection_summary.parquet";
+            _jsonExporter.writeSummaryParquet(modes, totalLength, static_cast<int>(modes.size()), summaryPath);
+            log.dump(WrittenSummary{modes, totalLength, summaryPath});
 
             result["num_segments"] = static_cast<int>(segments.size());
             result["num_modes"] = static_cast<int>(modes.size());

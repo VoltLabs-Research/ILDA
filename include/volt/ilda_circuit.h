@@ -15,6 +15,8 @@
 
 namespace Volt {
 
+class IldaLog;
+
 inline constexpr int ILDA_NTRY_MAX = 200;
 inline constexpr double ILDA_CIRCUIT_TOL = 1e-6;
 
@@ -35,8 +37,60 @@ struct CircuitContext {
 std::optional<CircuitResult> burgersCircuit(
     int startIndex,
     int endIndex,
+    const CircuitContext& ctx,
+    IldaLog& log
+);
+
+// The depth-first search for the path a Burgers circuit takes through one grain, and its state.
+namespace IldaCircuit {
+
+struct Neigh {
+    double dist = 0.0;
+    int index = -1;
+    Vector3 delta{0.0, 0.0, 0.0};
+    Vector3 a1{0.0, 0.0, 0.0};
+    Matrix3 Ft2new{Matrix3::Identity()};
+    Quaternion refOri2new{0.0, 0.0, 0.0, 0.0};
+};
+
+struct Frame {
+    int atomIndex = -1;
+    Vector3 spatialSum{0.0, 0.0, 0.0};
+    Vector3 latticeSum{0.0, 0.0, 0.0};
+    Matrix3 Ft2{Matrix3::Identity()};
+    Quaternion refOri2{0.0, 0.0, 0.0, 0.0};
+    int ntry = 0;
+    bool entered = false;
+
+    Matrix3 Ft{Matrix3::Identity()};
+    int grainId = 0;
+    StructureType gs = OTHER;
+    Quaternion refOri{0.0, 0.0, 0.0, 1.0};
+    double ptmScale = 1.0;
+
+    std::vector<Neigh> neighs;
+    std::size_t nextNeighbor = 0;
+};
+
+enum class Ret { DEADEND, ABORT, SUCCESS };
+
+struct PathResult {
+    Vector3 spatialSum{0.0, 0.0, 0.0};
+    Vector3 latticeSum{0.0, 0.0, 0.0};
+};
+
+bool computeGrainProps(Frame& f, const CircuitContext& ctx);
+
+void buildNeighs(Frame& f, int endIndex, const Vector3& target,
+                 const std::vector<std::uint8_t>& visited,
+                 const CircuitContext& ctx);
+
+std::optional<PathResult> recursiveCircuitSearch(
+    int startNbr, int startIndex, int endIndex, const Vector3& target,
     const CircuitContext& ctx
 );
+
+}
 
 std::optional<std::pair<Matrix3, Quaternion>> getHcpFccTrans(
     const IldaPtmNeighborQuery::Neighbor& fccNeigh,
