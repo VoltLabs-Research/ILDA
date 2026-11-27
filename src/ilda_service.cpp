@@ -217,7 +217,7 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
     const long cisCount = std::count(cis.cis.begin(), cis.cis.end(), static_cast<std::uint8_t>(1));
 
     json result = AnalysisResult::success();
-    result["cis_count"] = static_cast<int>(cisCount);
+    result["cis_count"] = cisCount;
     result["grain_a"] = _gA.grainId;
     result["grain_b"] = _gB.grainId;
 
@@ -282,8 +282,8 @@ json ILDA::run(const LammpsParser::Frame& frame, const std::string& outputBase) 
             _jsonExporter.writeSummaryParquet(modes, totalLength, static_cast<int>(modes.size()), summaryPath);
             log.dump(WrittenSummary{modes, totalLength, summaryPath});
 
-            result["num_segments"] = static_cast<int>(segments.size());
-            result["num_modes"] = static_cast<int>(modes.size());
+            result["num_segments"] = segments.size();
+            result["num_modes"] = modes.size();
             result["total_line_length"] = totalLength;
         }
     }

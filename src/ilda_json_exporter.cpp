@@ -29,15 +29,15 @@ void IldaJsonExporter::writeBondsParquet(
     streamBondsToParquet(
         filePath,
         bonds,
-        [&](ColumnarBondWriter& writer, std::size_t i) {
+        [&](ColumnarRowWriter& writer, std::size_t i) {
             const IldaSegment& s = segments[i];
-            writer.field("burgers_vector", std::vector<double>{ s.burgers.x(), s.burgers.y(), s.burgers.z() });
-            writer.field("terrace_plane", std::vector<double>{ s.plane.x(), s.plane.y(), s.plane.z() });
-            writer.field("color", std::vector<double>{ s.color.x(), s.color.y(), s.color.z() });
+            writer.field("burgers_vector", s.burgers);
+            writer.field("terrace_plane", s.plane);
+            writer.field("color", s.color);
             writer.field("step_height", s.step);
             writer.field("ideal_step_height_a", s.stepIdealA);
             writer.field("ideal_step_height_b", s.stepIdealB);
-            writer.field("burgers_id", static_cast<std::int64_t>(s.bid));
+            writer.field("burgers_id", s.bid);
             writer.field("magnitude", s.bnorm);
             writer.field("length", (s.pos2 - s.pos1).length());
         }
